@@ -1,0 +1,3087 @@
+---
+title: "GUT_review_1_Data_analysis"
+format: html
+editor: visual
+---
+
+# Packages
+```{r packages, include = FALSE, echo = FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load("ggrepel","readxl", "dplyr", "ggplot2", "tidyverse", "tidyr", "RColorBrewer", "stringr", "DESeq2", "openxlsx", "plyr","factoextra", "FactoMineR", "biomaRt", "clusterProfiler", "pheatmap","gridExtra" , 'plotly','rWikiPathways','KEGGREST',"ggthemes", "knitr", "kableExtra","org.Hs.eg.db", "ggbreak", "extrafont", "ReactomePA", "enrichplot", "export")
+
+
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+
+#options(timeout = max(2000, getOption("timeout")))
+
+```
+
+## Colors and functions
+```{r}
+getPalette <- colorRampPalette(brewer.pal(11, "Spectral"))
+
+PCA_all <- c("#4292c6", "#41ab5d", "#9e9ac8",  "#fd8d3c", "#df65b0","#9ecae1", "#c7e9c0" , "#dadaeb", "#fdd0a2", "#f768a1","#4292c6", "#41ab5d", "#9e9ac8",  "#fd8d3c", "#df65b0","#9ecae1") 
+
+PCA_dim23 <- c(
+  "#b2182b", "#d6604d", "#f4a582", "#fddbc7", "#f7f7f7",  # Red → Yellow → Green (1-5)
+  "#d1e5f0", "#92c5de", "#4393c3", "#2166ac", "#253494",  # Green variations (6-10)
+  "#c51b7d", "#e9a3c9", "#fde0ef", "#e6f5d0", "#a1d76a", "#4d9221")  # Blue → Purple (11-16)
+
+
+PCA_small <- c("#4292c6", "#41ab5d", "#9e9ac8",  "#fd8d3c", "#df65b0","#9ecae1", "#c7e9c0" , "#dadaeb", "#fdd0a2", "#f768a1")
+PCA_large <- c("#4292c6", "#41ab5d", "#9e9ac8",  "#fd8d3c", "#df65b0","#9ecae1")
+number_of_genes.color <- c("#4292c6", "#41ab5d", "#9e9ac8",  "#fd8d3c", "#df65b0")
+
+theme_GE <- function(base_size = 15, base_family = "") {
+  theme_minimal(base_size = base_size, base_family = base_family) +
+    theme(
+      # Set the overall text size and font
+      text = element_text(size = base_size, family = base_family),
+      
+      # Modify title text
+      plot.title = element_text(face = "bold", hjust = 0.5),
+      
+      # Ensure axis titles are shown
+      axis.title.x = element_text(size = base_size),
+      axis.title.y = element_text(size = base_size),
+      
+      # Ensure axis ticks and texts are visible
+      axis.text.x = element_text(size = base_size, angle = 45, hjust = 1, vjust = 1),
+      axis.text.y = element_text(size = base_size),
+      axis.ticks = element_line(color = "black"), # Make ticks black
+      
+      axis.line = element_line(color = "black"),
+      
+      # Keep the background of the plot area blank
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      
+      # Keep panel background blank
+      panel.background = element_blank(),
+      
+      # Modify legend position
+      legend.position = "right"
+      
+      # Modify plot margin
+      #plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt")
+    )
+}
+
+
+theme_gut <- function(base_size = 9, base_family = "arial") {
+  theme_minimal(base_size = base_size, base_family = base_family) +
+    theme(
+      panel.background = element_rect(fill = "white", colour = NA),
+      plot.background = element_rect(fill = "white", colour = NA),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.line = element_line(colour = "black", size = 0.3),
+      axis.ticks = element_line(colour = "black", size = 0.3),
+      plot.title = element_text(size = base_size + 1, face = "bold", hjust = 0.5),
+      axis.title = element_text(size = base_size),
+      axis.text = element_text(size = base_size - 1),
+      legend.text = element_text(size = base_size - 1),
+      legend.title = element_text(size = base_size),
+      strip.background = element_blank(),
+      strip.text = element_text(size = base_size, face = "bold")
+    )
+}
+
+
+capitalize_first <- function(x) {
+  paste0(toupper(substring(x, 1, 1)), substring(x, 2))
+}
+
+
+# Define the correct tissue levels (based on your list)
+tissue_levels_all <- c(
+  "Duodenum",
+  "Treitz",
+  "Small intestine 3",
+  "Small intestine 4",
+  "Small intestine 5",
+  "Small intestine 6",
+  "Small intestine 7",
+  "Small intestine 8",
+  "Small intestine 9",
+  "Ileocecal",
+  "Cecum",
+  "Ascending colon",
+  "Transverse colon",
+  "Descending colon",
+  "Sigmoideum",
+  "Rectum"
+)
+
+```
+
+## Load raw datafiles & Process df and design
+```{r}
+##Load raw datafiles
+df <- read.delim("/Users/hannahgilliam-vigh/Documents/Publicationer/Dataset/Data_NotNorm/20220502_Counts.txt", header = TRUE, sep = "\t", dec = ".")
+design_df <- read.delim("//Users/hannahgilliam-vigh/Documents/Publicationer/Dataset/Data_NotNorm/20220502_Design.txt", header = TRUE, sep = "\t", dec = ".")
+ProtCod <- read.delim("/Users/hannahgilliam-vigh/Documents/Publicationer/Dataset/Data_NotNorm/20220502_PC.txt", header = TRUE, sep = "\t", dec = ".")
+RPKM_Reads <- read_excel("/Users/hannahgilliam-vigh/Documents/Publicationer/Dataset/GUS2018-544-GH RNAseq gut RNAseq tables.xlsx")
+
+##Process df and design
+# Initial dimensions of df and design_df
+cat("Initial dimensions of df:", dim(df), "\n")
+cat("Initial dimensions of design_df:", dim(design_df), "\n")
+
+# Adjust column names in 'df' by removing the first character and keeping positions 2 to 5
+colnames(df) <- substr(colnames(df), 2, 5)
+
+# Display the first five column names as a check
+cat("First 5 column names in df after renaming:", colnames(df)[1:5], "\n")
+
+# Display the first five row names of 'design_df' to verify alignment
+cat("First 5 row names in design_df:", rownames(design_df)[1:5], "\n")
+
+# Check if row names of 'design_df' match column names of 'df'
+alignment_check <- all(rownames(design_df) == colnames(df))
+cat("Are row names of design_df and col names of df identical?", alignment_check, "\n")
+
+# Dimensions before filtering
+cat("Dimensions before filtering:\n")
+cat("df:", dim(df), "\n")
+cat("design_df:", dim(design_df), "\n")
+
+# Define known outlier samples to exclude
+
+outliers <- c("6503", "6462", "6464", "6463", "6299", "6313", "6351", "6374")
+outlier_info <- design_df %>% 
+    filter(rownames(design_df) %in% outliers)
+
+# Remove specific samples from 'design_df' that are known outliers or should be excluded
+design_df <- design_df[!rownames(design_df) %in% outliers,]
+
+# Dimensions after filtering
+cat("Dimensions after filtering design_df:\n")
+cat("design_df:", dim(design_df), "\n")
+
+# Subset 'df' to retain only the columns that correspond to the updated 'design_df'
+df <- df[, rownames(design_df) ]
+
+# Final dimensions after subsetting df
+cat("Final dimensions of df:", dim(df), "\n")
+
+## New columns - New categorization based on heatmap 
+
+# Create a unique ID for each sample by combining Tissue and Treatment
+design_df$ID <- as.factor(paste0(design_df$Tissue, "_", design_df$Treatment))
+
+# Categorize samples into broader anatomical locations
+design_df <- design_df %>% 
+  mutate(Location = case_when(
+    Tissue %in% c("Duodenum", "Treitz", "small intestine 3") ~ "ProxSmall",
+    Tissue %in% c("small intestine 4", "small intestine 5", "small intestine 6") ~ "MidSmall",
+    Tissue %in% c("small intestine 7", "small intestine 8", "small intestine 9", "ileocecal") ~ "DistSmall",
+    Tissue %in% c("cecum", "ascending colon", "transverse colon") ~ "ProxLarge",
+    Tissue %in% c("descending colon", "sigmoideum", "rectum") ~ "DistLarge",
+    TRUE ~ "other"
+  ))
+
+# Assign numerical labels to tissue locations for ordered analysis
+design_df <- design_df %>% 
+  mutate(Location.num = case_when(
+    Tissue == "Duodenum" ~ "1",
+    Tissue == "Treitz" ~ "2",
+    Tissue == "small intestine 3" ~ "3",
+    Tissue == "small intestine 4" ~ "4",
+    Tissue == "small intestine 5" ~ "5",
+    Tissue == "small intestine 6" ~ "6",
+    Tissue == "small intestine 7" ~ "7",
+    Tissue == "small intestine 8" ~ "8",
+    Tissue == "small intestine 9" ~ "9",
+    Tissue == "ileocecal" ~ "10",
+    Tissue == "cecum" ~ "11",
+    Tissue == "ascending colon" ~ "12",
+    Tissue == "transverse colon" ~ "13",
+    Tissue == "descending colon" ~ "14",
+    Tissue == "sigmoideum" ~ "15",
+    Tissue == "rectum" ~ "16",
+    TRUE ~ "other"
+  ))
+
+# Ensure only the first letter of the string is capitalized
+design_df <- design_df %>%
+  mutate(Tissue = str_to_sentence(Tissue),  # Converts "small intestine 3" -> "Small intestine 3"
+    Subject = case_when(
+      Treatment == "T2DM" ~ paste0("D", Subject),
+      Treatment == "Kontrol" ~ paste0("K", Subject),
+      TRUE ~ as.character(Subject)  # fallback, just in case
+    ), 
+    Tissue = factor(Tissue, levels = c("Duodenum","Treitz","Small intestine 3", "Small intestine 4", "Small intestine 5", "Small intestine 6", "Small intestine 7","Small intestine 8", "Small intestine 9","Ileocecal", "Cecum", "Ascending colon", "Transverse colon", 
+                                 "Descending colon", "Sigmoideum", "Rectum"))
+  )
+
+# Check updated dimensions after adding new columns
+cat("Final dimensions of design_df after adding new columns:", dim(design_df), "\n")
+
+## Filter df based on protein-coding genes
+
+# Check current dimensions of df and ProtCod before filtering
+cat("Dimensions of df before filtering for protein-coding genes:", dim(df), "\n")
+cat("Dimensions of ProtCod:", dim(ProtCod), "\n")
+
+# Keep only rows in df that correspond to protein-coding genes in ProtCod
+df <- df[rownames(df) %in% ProtCod$ensembl_gene_id, ]
+
+# Check dimensions after filtering
+cat("Dimensions of df after filtering for protein-coding genes:", dim(df), "\n")
+```
+
+###RPKM and VST data annotation
+```{r}
+#Define location
+location_mapping <- c(
+  "Duodenum" = 1, "Treitz" = 2, "small intestine 3" = 3,
+  "small intestine 4" = 4, "small intestine 5" = 5,
+  "small intestine 6" = 6, "small intestine 7" = 7,
+  "small intestine 8" = 8, "small intestine 9" = 9, 
+  "ileocecal" = 10, "cecum" = 11, "ascending colon"= 12, 
+  "transverse colon" = 13, "descending colon" = 14, 
+  "sigmoideum" = 15, "rectum" = 16
+)
+
+# Step 1: Gather long format
+rpkm_long <- RPKM_Reads %>%
+  pivot_longer(
+    cols = -c(`Ensembl acc key`, `Gene name`, Description),
+    names_to = "Sample",
+    values_to = "Expression"
+  )
+# Step 2: Add metadata
+rpkm_long <- rpkm_long %>%
+  mutate(
+    Type = ifelse(str_detect(Sample, "Kontrol"), "Kontrol", "T2DM"),
+    Subject = str_extract(Sample, "animal \\d+") %>% str_replace("animal ", ""),
+    Subject = ifelse(Type == "Kontrol", paste0("K", Subject), paste0("D", Subject)),
+    Tissue_raw = str_extract(Sample, "Duodenum|Treitz|small intestine 3|small intestine 4|small intestine 5|small intestine 6|small intestine 7|small intestine 8|small intestine 9|ileocecal|cecum|ascending.colon|transverse.colon|descending.colon|sigmoideum|rectum"),
+    Location.num = location_mapping[Tissue_raw]
+  )
+
+# Step 3: Add factors and clean column names
+rpkm_long <- rpkm_long %>%
+  filter(!is.na(Location.num)) %>%
+  mutate(
+    Location = factor(Location.num, levels = 1:16, labels = c('Duodenum', 'Treitz','3','4','5','6','7','8','9','Ileocecal',"Cecum", "Asc. colon", "Trans. colon", "Desc. colon", "Sigmoid colon", "Rectum")),
+    Type = factor(Type, levels = c("Kontrol", "T2DM"))
+  ) %>%
+  rename(
+    ENSEMBL = `Ensembl acc key`,
+    SYMBOL = `Gene name`,
+    GENENAME = Description
+  ) %>%
+  dplyr::select(ENSEMBL, SYMBOL, GENENAME, Expression, Type, Location, Subject)
+
+# Step 4: Annotate with ENTREZID
+gene_map <- bitr(
+  unique(rpkm_long$ENSEMBL),
+  fromType = "ENSEMBL",
+  toType   = c("ENTREZID"),
+  OrgDb    = org.Hs.eg.db
+)
+
+rpkm_annotated <- rpkm_long %>%
+  left_join(gene_map, by = "ENSEMBL") %>%
+  rename(entrezgene_id = ENTREZID) %>%
+  filter(!is.na(entrezgene_id))
+```
+
+## PCA of All Intestinal Segments
+```{r}
+# Step 1: Prepare data
+# - 'design.' is the sample metadata (experimental design)
+# - 'count.' is the gene expression count matrix
+design. <- design_df
+count. <- df
+
+# Step 2: Create a DESeq2 dataset
+# - This normalizes counts while accounting for differences in sequencing depth
+dds. <- DESeqDataSetFromMatrix(count., design., design = ~ID)
+
+# Step 3: Variance Stabilizing Transformation (VST)
+# - VST is applied to normalize data and reduce heteroskedasticity
+# - 'vst_values.' contains the transformed expression values
+vst_values. <- vst(dds.) %>% assay()
+
+## Selecting the Most Variable Genes for PCA
+
+# Step 4: Calculate gene variability
+# - Compute row-wise variance for each gene to identify the most variable genes
+tmp. <- data.frame(
+  ensembl_gene_id = rownames(vst_values.),
+  rowVar = rowVars(vst_values.)
+)
+
+# Step 5: Rank genes by variance (descending order)
+# - Higher variance indicates greater variation across samples
+tmp. <- tmp.[order(tmp.$rowVar, decreasing = TRUE),]
+
+# Step 6: Select the top 500 most variable genes for PCA
+top_x <- 500
+use.these.500. <- tmp.$ensembl_gene_id[1:top_x]
+
+# Step 7: Subset vst_values to include only the top 500 most variable genes
+my.pca. <- vst_values.[use.these.500., rownames(design.)]
+
+## Performing PCA
+
+# Step 8: Perform Principal Component Analysis (PCA)
+# - Transpose data since PCA expects samples in rows and genes in columns
+my.pca. <- FactoMineR::PCA(t(my.pca.))
+
+## Preparing Data for Visualization
+
+# Step 10: Extract PCA coordinates
+# - This dataframe contains the position of each sample in the PCA space
+plot.this. <- as.data.frame(my.pca.$ind$coord)
+
+# Step 11: Merge PCA coordinates with metadata
+# - Adds tissue type, treatment, and sample information
+plot.this. <- merge(plot.this., design.[,c("Tissue", "Treatment", "Sample_run", "Subject")], by="row.names")
+
+# Step 12: Compute mean PCA coordinates per tissue type
+plot.this.sum. <- dplyr::group_by(plot.this., Tissue)
+plot.this.sum. <- dplyr::summarise(plot.this.sum., mean(Dim.1), mean(Dim.2), mean(Dim.3)) %>% as.data.frame()
+
+# Step 13: Rename columns for clarity
+colnames(plot.this.sum.) <- c("Tissue", "Dim.1", "Dim.2", "Dim.3")
+
+# Step 14: Select data for T2DM treatment
+plot.this.t2dm <- plot.this.[plot.this.$Treatment == "T2DM",]
+
+## Creating the PCA Plot
+
+# Step 15: Set ggplot options
+options(ggrepel.max.overlaps = Inf)  # Prevent excessive label overlaps
+
+# Step 16: Generate PCA plot using ggplot2
+p <- ggplot(NULL, aes((Dim.1) * -1, (Dim.2) * -1, bg = Tissue)) +
+  
+  # Add labels for tissue clusters (mean PCA coordinates)
+  geom_label_repel(data = plot.this.sum., 
+                   aes(point.size = 4, x = (Dim.1) * -1, y = (Dim.2) * -1, label = Tissue), 
+                   box.padding = 1, label.padding = 0.2, point.padding = 45, 
+                   max.overlaps = Inf, alpha = 0.9, size = 5) +
+  
+  # Add points for T2DM samples (black dots)
+  geom_point(data = plot.this.t2dm, pch = 21, size = 2, col = "black") +
+  
+  # Add points for all samples
+  geom_point(data = plot.this., size = 4, pch = 21, alpha = 0.5) +
+  
+  # Apply theme
+  theme_tufte(base_family = "Arial", base_size = 11) +
+  theme(legend.position = "none", axis.line = element_line(linewidth = 0.4)) +
+  
+  # Dynamically generate axis labels using PCA variance explained
+  xlab(paste0("PC 1 (", round(my.pca.$eig[1, 2], 2), "%)")) +
+  ylab(paste0("PC 2 (", round(my.pca.$eig[2, 2], 2), "%)")) +
+  
+  # Apply tissue color scheme
+  scale_fill_manual(values = PCA_all)
+
+# Step 17: Display the PCA plot
+print(p)
+
+#graph2ppt(x = p, "PCA_plot_all", width = 20.37/2.5, height = 11.99/2.5)
+
+```
+## PCA of Small Intestine Samples
+```{r  small PCA, echo = FALSE}
+# Step 1: Subset Data for Small Intestine
+# - Select only samples from the small intestine based on 'Location.num'
+# - This ensures the analysis is restricted to relevant tissue segments
+design. <- subset(design_df, as.numeric(Location.num) < 11) 
+
+# Extract corresponding count matrix (gene expression data) for selected samples
+count. <- df[, rownames(design.)]
+
+# Step 2: Create a DESeq2 dataset
+# - This normalizes counts while accounting for differences in sequencing depth
+dds. <- DESeqDataSetFromMatrix(count., design., design = ~ID)
+
+# Step 3: Variance Stabilizing Transformation (VST)
+# - VST is applied to normalize data and reduce heteroskedasticity
+# - 'vst_values.' contains the transformed expression values
+vst_values. <- vst(dds.) %>% assay()
+
+## Selecting the Most Variable Genes for PCA
+
+# Step 4: Calculate gene variability
+# - Compute row-wise variance for each gene to identify the most variable genes
+tmp. <- data.frame(
+  ensembl_gene_id = rownames(vst_values.),
+  rowVar = rowVars(vst_values.)
+)
+
+# Step 5: Rank genes by variance (descending order)
+# - Higher variance indicates greater variation across samples
+tmp. <- tmp.[order(tmp.$rowVar, decreasing = TRUE),]
+
+# Step 6: Select the top 500 most variable genes for PCA
+top_x <- 500
+use.these.500. <- tmp.$ensembl_gene_id[1:top_x]
+
+# Step 7: Subset vst_values to include only the top 500 most variable genes
+my.pca. <- vst_values.[use.these.500., rownames(design.)]
+
+## Performing PCA
+
+# Step 8: Perform Principal Component Analysis (PCA)
+# - Transpose data since PCA expects samples in rows and genes in columns
+my.pca. <- FactoMineR::PCA(t(my.pca.))
+
+## Preparing Data for Visualization
+
+# Step 10: Extract PCA coordinates
+# - This dataframe contains the position of each sample in the PCA space
+plot.this. <- as.data.frame(my.pca.$ind$coord)
+
+# Step 11: Merge PCA coordinates with metadata
+# - Adds tissue type, treatment, and sample information
+plot.this. <- merge(plot.this., design.[,c("Tissue", "Treatment", "Sample_run")], by="row.names")
+
+# Step 12: Compute mean PCA coordinates per tissue type
+plot.this.sum. <- dplyr::group_by(plot.this., Tissue)
+plot.this.sum. <- dplyr::summarise(plot.this.sum., mean(Dim.1), mean(Dim.2), mean(Dim.3)) %>% as.data.frame()
+
+# Step 13: Rename columns for clarity
+colnames(plot.this.sum.) <- c("Tissue", "Dim.1", "Dim.2", "Dim.3")
+
+# Step 14: Select data for T2DM treatment
+plot.this.t2dm <- plot.this.[plot.this.$Treatment == "T2DM",]
+
+## Creating the PCA Plot
+
+# Step 15: Set ggplot options
+options(ggrepel.max.overlaps = Inf)  # Prevent excessive label overlaps
+
+# Step 16: Generate PCA plot using ggplot2
+p <- ggplot(NULL, aes((Dim.1) * -1, (Dim.2), bg = Tissue)) +
+  
+  # Add labels for tissue clusters (mean PCA coordinates)
+  geom_label_repel(data = plot.this.sum., 
+                   aes(point.size = 4, x = (Dim.1) * -1, y = (Dim.2), label = Tissue), 
+                   box.padding = 3, label.padding = 0.3, point.padding = 45, 
+                   max.overlaps = Inf, alpha = 0.9, size = 5) +
+  
+  # Add points for T2DM samples (black dots)
+  geom_point(data = plot.this.t2dm, pch = 21, size = 2, col = "black") +
+  
+  # Add points for all samples
+  geom_point(data = plot.this., size = 4, pch = 21, alpha = 0.5) +
+  
+  # Apply theme
+  theme_tufte(base_family = "Helvetica", base_size = 14) +
+  theme(legend.position = "none", axis.line = element_line(linewidth = 0.4)) +
+  
+  # Dynamically generate axis labels using PCA variance explained
+  xlab(paste0("PC 1 (", round(my.pca.$eig[1, 2], 2), "%)")) +
+  ylab(paste0("PC 2 (", round(my.pca.$eig[2, 2], 2), "%)")) +
+  
+  # Apply tissue color scheme
+  scale_fill_manual(values = PCA_all)
+
+# Step 17: Display the PCA plot
+print(p)
+
+
+#graph2ppt(x = p, "PCA_plot_small", width = 20.37/2.5, height = 11.99/2.5)
+```
+
+## PCA of Large Intestine Samples
+```{r  large PCA, echo = FALSE}
+# Step 1: Subset Data for Large Intestine
+# - Select only samples from the large intestine based on 'Location.num'
+design. <- subset(design_df, as.numeric(Location.num) > 10) 
+
+# Extract corresponding count matrix (gene expression data) for selected samples
+count. <- df[, rownames(design.)]
+
+# Step 2: Create a DESeq2 dataset
+# - This normalizes counts while accounting for differences in sequencing depth
+dds. <- DESeqDataSetFromMatrix(count., design., design = ~ID)
+
+# Step 3: Variance Stabilizing Transformation (VST)
+# - VST is applied to normalize data and reduce heteroskedasticity
+# - 'vst_values.' contains the transformed expression values
+vst_values. <- vst(dds.) %>% assay()
+
+## Selecting the Most Variable Genes for PCA
+
+# Step 4: Calculate gene variability
+# - Compute row-wise variance for each gene to identify the most variable genes
+tmp. <- data.frame(
+  ensembl_gene_id = rownames(vst_values.),
+  rowVar = rowVars(vst_values.)
+)
+
+# Step 5: Rank genes by variance (descending order)
+# - Higher variance indicates greater variation across samples
+tmp. <- tmp.[order(tmp.$rowVar, decreasing = TRUE),]
+
+# Step 6: Select the top 500 most variable genes for PCA
+top_x <- 500
+use.these.500. <- tmp.$ensembl_gene_id[1:top_x]
+
+# Step 7: Subset vst_values to include only the top 500 most variable genes
+my.pca. <- vst_values.[use.these.500., rownames(design.)]
+
+## Performing PCA
+
+# Step 8: Perform Principal Component Analysis (PCA)
+# - Transpose data since PCA expects samples in rows and genes in columns
+my.pca. <- FactoMineR::PCA(t(my.pca.))
+
+## Preparing Data for Visualization
+
+# Step 10: Extract PCA coordinates
+# - This dataframe contains the position of each sample in the PCA space
+plot.this. <- as.data.frame(my.pca.$ind$coord)
+
+# Step 11: Merge PCA coordinates with metadata
+# - Adds tissue type, treatment, and sample information
+plot.this. <- merge(plot.this., design.[,c("Tissue", "Treatment", "Sample_run", "Subject")], by="row.names")
+
+# Step 12: Compute mean PCA coordinates per tissue type
+plot.this.sum. <- dplyr::group_by(plot.this., Tissue)
+plot.this.sum. <- dplyr::summarise(plot.this.sum., mean(Dim.1), mean(Dim.2), mean(Dim.3)) %>% as.data.frame()
+
+# Step 13: Rename columns for clarity
+colnames(plot.this.sum.) <- c("Tissue", "Dim.1", "Dim.2", "Dim.3")
+
+# Step 14: Select data for T2DM treatment
+plot.this.t2dm <- plot.this.[plot.this.$Treatment == "T2DM",]
+
+## Creating the PCA Plot
+
+# Step 15: Set ggplot options
+options(ggrepel.max.overlaps = Inf)  # Prevent excessive label overlaps
+
+# Step 16: Generate PCA plot using ggplot2
+p <- ggplot(NULL, aes((Dim.1), (Dim.2) , bg = Tissue)) +
+  
+  # Add labels for tissue clusters (mean PCA coordinates)
+  geom_label_repel(data = plot.this.sum., 
+                   aes(point.size = 4, x = (Dim.1), y = (Dim.2), label = Tissue), 
+                   box.padding = 1.28, label.padding = 0.2, point.padding = 138, 
+                   max.overlaps = Inf, alpha = 0.9, size = 5) +
+  
+  # Add points for T2DM samples (black dots)
+  geom_point(data = plot.this.t2dm, pch = 21, size = 2, col = "black") +
+  
+  # Add points for all samples
+  geom_point(data = plot.this., size = 4, pch = 21, alpha = 0.5) +
+  
+  # Apply theme
+  theme_tufte(base_family = "Helvetica", base_size = 14) +
+  theme(legend.position = "none", axis.line = element_line(linewidth = 0.4)) +
+  
+  # Dynamically generate axis labels using PCA variance explained
+  xlab(paste0("PC 1 (", round(my.pca.$eig[1, 2], 2), "%)")) +
+  ylab(paste0("PC 2 (", round(my.pca.$eig[2, 2], 2), "%)")) +
+  
+  # Apply tissue color scheme
+  scale_fill_manual(values = PCA_all)
+
+# Step 17: Display the PCA plot
+print(p)
+
+#graph2ppt(x = p, "PCA_plot_large", width = 20.37/2.5, height = 11.99/2.5)
+
+```
+
+#Spatial differences compared to Duodenum or Rectum Overview This script analyzes spatial differences in gene expression along the small and large intestine by comparing each intestinal segment to a reference tissue (Duodenum for the small intestine, Rectum for the large intestine). The script:
+
+-   Filters control samples (Kontrol) for spatial comparison.
+-   Runs DESeq2 to identify differentially expressed genes (DEGs).
+-   Computes variance-stabilized transformed (VST) values for visualization.
+-   Extracts significantly regulated genes (padj \< 0.05) for each segment.
+-   Computes mean expression values for each tissue.
+
+This script takes a long time to run, and results have already been saved.
+```{r}
+## Step 1: Filter Small Intestine Samples
+# - Select only samples from the small intestine (Location.num < 11).
+# - This ensures we are analyzing only the small intestine while excluding large intestine segments.
+design. <- design_df 
+design.$Tissue <- as.factor(design.$Tissue) %>% relevel(design.$Tissue, ref = "Duodenum")
+
+design. <- design.[design.$Treatment == "Kontrol",]
+design. <- design.[design.$Treatment == "T2DM",]
+
+
+design. <- subset(design_df, as.numeric(Location.num) < 11) 
+design.$Tissue <- as.factor(design.$Tissue) %>% relevel(design.$Tissue, ref = "Duodenum")
+
+design. <- subset(design_df, as.numeric(Location.num) > 10) 
+design.$Tissue <- as.factor(design.$Tissue) %>% relevel(design.$Tissue, ref = "Rectum")
+
+design.$Treatment <- factor(design.$Treatment, levels = c("Kontrol","T2DM"))
+
+
+# Extract the corresponding count matrix (gene expression data) for selected samples
+count. <- df[, rownames(design.)]
+
+## Step 2: Filter for Control (Kontrol) Samples
+# - Only use "Kontrol" samples to assess spatial variation.
+# - This avoids confounding treatment effects from T2DM.
+design.control <- design.[design.$Treatment == "Kontrol",]
+counts.control <- df[, rownames(design.control)]
+
+## Step 3: Prepare DESeq2 Dataset & VST Transformation
+# - Normalize data using DESeq2's size factor estimation.
+# - Apply Variance Stabilizing Transformation (VST) for downstream analysis.
+
+#dds. <- DESeqDataSetFromMatrix(counts.control, design.control, design = ~Tissue)
+dds. <- DESeqDataSetFromMatrix(count., design., design = ~Tissue)
+
+dds. <- estimateSizeFactors(dds.)
+vst_values. <- vst(dds.) %>% assay()
+dds. <- DESeq(dds.)  # Run DESeq2 model
+resultsNames(dds.)   # Check available contrast names
+
+## Step 4: Define Small Intestine Segments (Excluding Duodenum)
+#All Segments 
+segments <- c("Treitz", "Small.intestine.3", "Small.intestine.4", "Small.intestine.5", "Small.intestine.6", "Small.intestine.7", 
+  "Small.intestine.8", "Small.intestine.9", "Ileocecal","Cecum", "Ascending.colon", "Transverse.colon","Descending.colon", "Sigmoideum", "Rectum")
+
+#Small Intestines
+segments <- c(
+  "Treitz", "Small.intestine.3", "Small.intestine.4", 
+  "Small.intestine.5", "Small.intestine.6", "Small.intestine.7", 
+  "Small.intestine.8", "Small.intestine.9", "Ileocecal"
+)
+#Large Intestines
+segments <- c("Cecum", "Ascending.colon", "Transverse.colon","Descending.colon", "Sigmoideum")
+
+## Step 5: Compute Differential Expression Relative to Reference segment
+# Example - Extracts genes differentially expressed in each small intestine part vs. Duodenum.
+results.list <- lapply(segments, function(x){
+  
+  # Construct contrast name based on DESeq2 resultsNames(dds.)
+  contrast_name <- paste0("Tissue_", x, "_vs_Duodenum")  
+
+  # Check if contrast exists before running results() to prevent errors
+  if (contrast_name %in% resultsNames(dds.)) {
+    tmp.res <- results(dds., name = contrast_name)
+    return(tmp.res)
+  } else {
+    message("Contrast not found for: ", x)  # Debugging message
+    return(NULL)  # Avoids breaking the loop if contrast is missing
+  }
+})
+
+# Assign the tissue names to the results list
+names(results.list) <- segments
+# View summary statistics for one of the results (e.g., Treitz)
+summary(results.list)
+
+## Step 6: Extract Significantly Regulated Genes (`padj < 0.05`)
+# - Retain only differentially expressed genes with an adjusted p-value below 0.05.
+regulated.genes <- lapply(results.list, function(x){
+  x <- na.omit(x)  # Remove NAs
+  tmp_padj_genes <- x[x$padj < 0.05,]  # Select significantly differentially expressed genes
+  return(as.data.frame(tmp_padj_genes))  # Convert to a data frame
+})
+
+# Assign tissue names to the list of regulated genes
+names(regulated.genes) <- segments
+
+## Step 7: Extract Unique Regulated Genes Across All Intestinal Segments
+# - Unlists all regulated genes, removes duplicates, and stores them in a vector.
+
+regulated.genes. <- lapply(regulated.genes, function(x){
+  tmp <- row.names(x)  # Extract gene names
+  return(tmp)
+}) %>% 
+  unlist(., use.names = F) %>%  # Flatten list into a single vector
+  unique()  # Remove duplicates
+
+## Step 8: Define Ordered Tissue Labels for Visualization
+# - Used to organize tissues in spatial order for downstream analysis.
+segments <- c(  "Duodenum", "Treitz", "Small intestine 3", "Small intestine 4", "Small intestine 5", "Small intestine 6", "Small intestine 7",
+  "Small intestine 8", "Small intestine 9", "Ileocecal", "Cecum", "Ascending colon", "Transverse colon","Descending colon", "Sigmoideum", "Rectum")
+
+segments <- c( "Duodenum", "Treitz", "Small intestine 3", "Small intestine 4", "Small intestine 5", "Small intestine 6", "Small intestine 7",
+  "Small intestine 8", "Small intestine 9", "Ileocecal")
+
+segments <- c("Cecum", "Ascending colon", "Transverse colon","Descending colon", "Sigmoideum", "Rectum")
+
+## Step 9: Group Samples by Tissue Type
+# - Creates a mapping of sample IDs to their corresponding tissue.
+# - Useful for plotting and averaging expression levels.
+
+together.by.tissue. <- lapply(segments, function(x){ 
+  tmp <- design. %>% 
+    filter(Tissue == x) %>%
+    dplyr::select(Sample_run)  # Extracts sample IDs for each tissue
+  return(tmp)
+}) 
+
+names(together.by.tissue.) <- segments
+
+## Step 10: Compute Mean Expression per Tissue
+# - Uses variance-stabilized (VST) values to compute average expression per tissue.
+
+mean.by.tissue. <- lapply(together.by.tissue., function(x){
+  tmp <- vst_values.[, colnames(vst_values.) %in% x$Sample_run]  # Select matching samples
+  tmp <- as.data.frame(tmp)
+  tmp$mean <- apply(tmp, 1, mean)  # Compute row-wise mean expression
+  return(as.data.frame(tmp$mean))  # Convert to dataframe
+})
+
+## Step 11: Combine Results into a Single Matrix
+# - Converts the list of means into a dataframe with one column per tissue.
+mean.by.tissue. <- do.call(cbind, mean.by.tissue.)
+colnames(mean.by.tissue.) <- names(together.by.tissue.)
+rownames(mean.by.tissue.) <- rownames(vst_values.)  
+```
+
+
+## Heatmap Small
+```{r}
+## Step 1: Load Previously Saved Data
+# - These files contain the results from the previous analysis
+# - 'regulated.genes_small_control.Rdata' holds the list of significantly regulated genes (padj < 0.05)
+# - 'mean.by.tissue_small_control.Rdata' contains mean gene expression values per tissue (VST transformed)
+
+load("regulated.genes_small_control.Rdata")   # Load significantly regulated genes
+load("mean.by.tissue_small_control.Rdata")    # Load mean expression data for each tissue
+
+## Step 2: Define Number of Clusters for Heatmap
+# - This determines how the hierarchical clustering will be cut into distinct clusters
+number_of_clusters <- 8  # Adjust as needed
+
+## Step 3: Filter Expression Data for Significantly Regulated Genes
+# - Extract only the genes from 'mean.by.tissue.' that are in the 'regulated_genes.' list
+heat.cluster. <- mean.by.tissue.[rownames(mean.by.tissue.) %in% regulated_genes., ]
+
+## Step 4: Generate Heatmap to Visualise Spatial Expression Patterns
+heat.res.row.graph <- pheatmap(
+  heat.cluster.,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  show_rownames = FALSE,        # Hide row names for cleaner visualization
+  cluster_cols = FALSE,         # Do not cluster columns (preserves spatial order of tissues)
+  scale = "row",                # Normalize rows (genes) for visualization
+  cutree_rows = number_of_clusters,  # Cut the hierarchical clustering into 8 clusters
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 11,                 # Set font size for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  width = 20,                    # Set figure width
+  cellwidth = 50                 # Adjust cell width for clear visualization
+)
+
+```
+
+## Heatmap Large
+```{r}
+## Step 1: Load Previously Saved Data
+# - These files contain the results from the previous analysis
+# - 'regulated.genes_large_control.Rdata' holds the list of significantly regulated genes (padj < 0.05)
+# - 'mean.by.tissue_large_control.Rdata' contains mean gene expression values per tissue (VST transformed)
+
+load("regulated.genes_large_control.Rdata")   # Load significantly regulated genes
+load("mean.by.tissue_large_control.Rdata")    # Load mean expression data for each tissue
+
+## Step 2: Define Number of Clusters for Heatmap
+# - This determines how the hierarchical clustering will be cut into distinct clusters
+number_of_clusters <- 8   # Adjust as needed
+
+## Step 3: Filter Expression Data for Significantly Regulated Genes
+# - Extract only the genes from 'mean.by.tissue.' that are in the 'regulated_genes.' list
+heat.cluster. <- mean.by.tissue.[rownames(mean.by.tissue.) %in% regulated_genes., ]
+
+## Step 4: Generate Heatmap to Visualise Spatial Expression Patterns
+heat.res.row.graph <- pheatmap(
+  heat.cluster.,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  show_rownames = FALSE,        # Hide row names for cleaner visualization
+  cluster_cols = FALSE,         # Do not cluster columns (preserves spatial order of tissues)
+  scale = "row",                # Normalize rows (genes) for visualization
+  cutree_rows = number_of_clusters,  # Cut the hierarchical clustering into 8 clusters
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 11,                 # Set font size for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  width = 20,                    # Set figure width
+  cellwidth = 50 )                # Adjust cell width for clear visualization
+
+```
+
+##Plot clusters
+```{r}
+## Set to "small" or "large"
+region <- "small"
+if (region == "large") {
+  load("regulated.genes_large_control.Rdata")   # Load significantly regulated genes for large intestine
+  load("mean.by.tissue_large_control.Rdata")    # Load mean expression data for large intestine
+} else if (region == "small") {
+  load("regulated.genes_small_control.Rdata")   # Load significantly regulated genes for small intestine
+  load("mean.by.tissue_small_control.Rdata")    # Load mean expression data for small intestine
+} else {
+  stop("Region must be either 'small' or 'large'")
+}
+
+## Define region-specific settings
+if (region == "large") {
+  region_columns <- c("Cecum", "Ascending Colon", "Transverse Colon", 
+                      "Descending Colon", "Sigmoideum", "Rectum")
+  region_labeltext <- c("Caecum", "Asc. colon", "Trans. colon", 
+                        "Desc. colon", "Sigmoideum", "Rectum")
+  output_prefix <- "Large"
+  
+} else if (region == "small") {
+  region_columns <- c("Duodenum", "Treitz", "Small Intestine 3", 
+                      "Small Intestine 4", "Small Intestine 5", "Small Intestine 6", 
+                      "Small Intestine 7", "Small Intestine 8", "Small Intestine 9", 
+                      "Ileocecal")
+  region_labeltext <- c("Duodenum", "Treitz", "3", "4", "5", "6", "7", "8", "9", "Ileocecal")
+  output_prefix <- "Small"
+  
+} else {
+  stop("Region must be either 'small' or 'large'")
+}
+
+
+## Step 1: Filter Expression Data for Significantly Regulated Genes
+number_of_clusters <- 8   # Adjust as needed
+heat.cluster. <- mean.by.tissue.[rownames(mean.by.tissue.) %in% regulated_genes., ]
+
+
+## Heatmap clustering
+heat.res.row <- pheatmap(
+  heat.cluster., 
+  cluster_rows = TRUE, 
+  show_rownames = FALSE, 
+  cluster_cols = FALSE, 
+  scale = "row"
+)
+
+## Add cluster assignments
+heat.res.row.clust <- cbind(
+  heat.cluster., 
+  cluster = cutree(heat.res.row$tree_row, k = number_of_clusters)
+)
+
+## Reorder rows according to dendrogram
+heat. <- as.data.frame(heat.res.row.clust[heat.res.row$tree_row$order, ])
+
+## Relabel clusters sequentially (1 to number_of_clusters)
+cluster_map <- data.frame(former = unique(heat.$cluster), new = seq_len(number_of_clusters))
+heat. <-  do.call(rbind, lapply(cluster_map$former, function(x) {
+  tmp <- heat.[heat.$cluster == x, ]
+  tmp$cluster <- cluster_map[cluster_map$former == x, ]$new
+  return(tmp)
+})) 
+
+## Summarise genes per cluster
+genes.in.cluster <- heat. %>% 
+  group_by(cluster) %>% 
+  summarise(n = n(), .groups = "drop")
+
+
+## Create list of gene IDs per cluster
+clusters.num <- seq_len(number_of_clusters)
+heat.cluster. <- lapply(clusters.num, function(x) {
+  rownames(subset(heat., cluster == x))
+})
+names(heat.cluster.) <- clusters.num
+
+## Perform GO enrichment per cluster
+heat.clust.go. <- lapply(heat.cluster., function(gene_ids) {
+  enrichGO(
+    gene     = gene_ids,
+    OrgDb    = "org.Hs.eg.db",
+    keyType  = "ENSEMBL",
+    ont      = "BP"
+  ) %>% as.data.frame()
+})
+names(heat.clust.go.) <- clusters.num
+
+genes.in.cluster
+heat.clust.go.
+
+## Convert cluster column to factor
+heat.$cluster <- factor(heat.$cluster, levels = clusters.num)
+
+
+# Plot all genes per cluster
+for (i in levels(heat.$cluster)) {
+  
+  # Subset genes for the cluster
+  genes_in_cluster <- heat. %>% filter(cluster == i)
+
+  # Scale gene expression per gene (row-wise z-score)
+  expr_scaled <- genes_in_cluster %>%
+    dplyr::select(all_of(region_columns)) %>%
+    t() %>%
+    scale() %>%
+    t() %>%
+    as.data.frame()
+
+  expr_scaled$genes <- rownames(genes_in_cluster)
+
+  # Calculate and scale cluster-mean expression
+  mean_expr <- colMeans(genes_in_cluster %>% dplyr::select(all_of(region_columns)))
+  mean_expr_scaled <- scale(mean_expr)
+  mean_expr_df <- data.frame(
+    condition   = names(mean_expr),
+    measurement = as.numeric(mean_expr_scaled)
+  )
+
+  # Convert to long format for plotting
+  expr_long <- tidyr::gather(
+    expr_scaled, key = "condition", value = "measurement", 
+    all_of(region_columns), factor_key = TRUE
+  )
+
+  # Create the plot
+  p <- ggplot() +
+    geom_line(data = expr_long, aes(x = condition, y = measurement, group = genes), 
+              color = "black", alpha = 0.05, linewidth = 0.2) +
+    geom_line(data = mean_expr_df, aes(x = condition, y = measurement, group = 1), 
+              color = '#67A9CF', linewidth = 2.0) +
+    scale_x_discrete(labels = region_labeltext) +
+    theme_gut(base_size = 14) + 
+    theme(
+      axis.text       = element_text(color = "black"),
+      axis.title.x    = element_blank(),
+      plot.title      = element_text(hjust = 0.5)
+    ) +
+    ylab("Normalized gene expression")
+
+  # Print and save plot
+  print(p)
+  #graph2ppt(x = p, file = paste0(output_prefix, "_Cluster_", i, ".pptx"), width = 17.42 / 2, height = 8.08 / 2)
+}
+```
+
+##Test dds small intestines 
+###Setup for analysis
+```{r}
+# Subset data for small intestine samples
+design. <- subset(design_df, as.numeric(Location.num) %in% 1:6) 
+count. <- df[, rownames(design.)]
+
+# Create DESeq2 object and normalize
+# - This normalizes counts while accounting for differences in sequencing depth
+dds <- DESeqDataSetFromMatrix(count., design., design = ~ID)
+dds <- estimateSizeFactors(dds)
+dds$Tissue <- factor(dds$Tissue, levels = c("Duodenum", "Treitz", "Small intestine 3", "Small intestine 4", "Small intestine 5", "Small intestine 6"))
+dds$Treatment <- factor(dds$Treatment, levels = c("T2DM", "Kontrol"))
+design(dds) <- ~ Tissue + Treatment
+dds <- DESeq(dds)
+
+# Differential expression analysis
+dds <- as.data.frame(results(dds, contrast=c("Treatment", "T2DM", "Kontrol"))) 
+
+# save the DESeq2 object for further analysis
+save(dds, file = "forsmallintestineanalysis.RData")
+```
+
+###Run analysis 
+```{r}
+load("forsmallintestineanalysis.RData")
+
+# Convert from Ensembl to Entrez
+converted <- bitr(
+    rownames(dds),
+    fromType = "ENSEMBL",
+    toType   = c("ENTREZID", "GENENAME", "SYMBOL"),
+    OrgDb    = "org.Hs.eg.db"
+  )
+# Merge and filter to valid Entrez IDs
+dds$ensembl_id <- rownames(dds)
+dds <- dplyr::left_join(converted, dds,
+                               by = c("ENSEMBL" = "ensembl_id"))
+dds <- dds[!is.na(dds$ENTREZID), ]
+
+# Store final dataset
+dds_small <- dds
+
+# Add a significance cutoff (e.g., padj < 0.05 and log2FoldChange > 1)
+res_df_small <- dds_small %>%
+  mutate(significant = ifelse(padj < 0.05 & abs(log2FoldChange) > 1, "Significant", "Not significant"))
+
+# Add a direction column based on log2FoldChange and padj
+res_df_small <- res_df_small %>%
+  mutate(direction = case_when(
+    padj < 0.05 & log2FoldChange > 1  ~ "Up",
+    padj < 0.05 & log2FoldChange < -1 ~ "Down",
+    TRUE                              ~ "NS"
+  ))
+```
+
+### GO enrichment small intestines
+```{r}
+# Perform enrichGO analysis on all significant genes
+GO_small <- enrichGO(
+  gene          = dds_small %>% filter(padj < 0.05) %>% pull(ENSEMBL),
+  OrgDb         = org.Hs.eg.db,
+  ont           = "BP",             # Biological Processes
+  keyType       = "ENSEMBL",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  qvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+# Visualise the top GO terms
+heatmap_GO_small <- as.data.frame(GO_small)[1:20,] %>% 
+  filter(!is.na(Description)) %>% 
+  ggplot(aes(x = "GO pathways", y = reorder(capitalize_first(Description), -log10(p.adjust)))) +
+  geom_tile(aes(fill = -log10(p.adjust))) +
+  scale_fill_gradient(high ="#41ab5d", low = "#c7e9c0") +
+  labs(
+    x = NULL,
+    y = NULL,
+    fill = "-log10(P adj)",
+  ) +
+  theme_gut()+
+  theme(axis.text.x = element_blank())
+
+# Display the heatmap
+heatmap_GO_small
+
+# Save the heatmap to a PowerPoint file
+#graph2ppt(x = heatmap_GO_small, "heatmap_GO_small", width = 17/3, height = 12/3)
+
+```
+
+###Volcano Plot small intestines
+```{r}
+# Identify top genes for labeling in the volcano plot
+top_genes <- res_df_small %>% 
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>%
+  distinct(ENSEMBL, .keep_all = TRUE) %>% 
+  filter(direction != "NS") %>%
+  group_by(direction) %>%
+ slice_min(order_by = padj, n = 25) %>%  # top 25 per group
+  ungroup() 
+
+# Create the volcano plot
+volcano_plot_small <- ggplot(res_df_small, aes(x = log2FoldChange, y = -log10(padj), color = direction)) +
+  geom_point(alpha = 0.3, size = 1) +
+  geom_point(data = top_genes, aes(x = log2FoldChange, y = -log10(padj), color = direction), size = 2.5) +  
+  geom_text_repel(data = top_genes, aes(label = SYMBOL, color = direction), size = 4) + 
+  scale_color_manual(values = c("Down" = "#2166ac", "Up" = "#b2182b", "NS" = "grey70")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "grey50") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "grey50") +
+  theme_gut() +
+  labs(
+    x = "Log2 Fold Change",
+    y = "-Log10(P adj)",
+    color = "Regulation"
+  ) +
+    theme(legend.position = "none") + 
+  xlim(-2.5,2.5)
+
+# Display the volcano plot
+print(volcano_plot_small)
+ 
+# Save the volcano plot to a PowerPoint file
+#graph2ppt(x = volcano_plot_small, "volcano_plot_small", width = 20.37/2.5, height = 11.99/2.5)
+```
+
+##Test dds distal small intestines 
+###Setup for analysis
+```{r}
+# Subset metadata and count matrix for small intestine samples
+design. <- design_df
+count. <- df[, rownames(design.)]
+
+# Create a DESeq2 dataset
+# - This normalizes counts while accounting for differences in sequencing depth
+dds <- DESeqDataSetFromMatrix(count., design., design = ~ID)
+dds <- estimateSizeFactors(dds)
+
+dds$Tissue <- factor(dds$Tissue, levels = tissue_levels_all)
+dds$Treatment <- factor(dds$Treatment, levels = c("T2DM", "Kontrol"))
+
+# Run DESeq2 analysis
+dds <- DESeq(dds)
+
+# Save the DESeq2 object for further analysis
+save(dds, file = "forsingleregionanalysis.RData")
+
+```
+
+###Run analysis
+```{r}
+load("forsingleregionanalysis.RData")
+
+# Extract results for T2DM vs Kontrol comparison
+dds <- as.data.frame(results(dds,contrast = c("ID", "ileocecal_T2DM", "ileocecal_Kontrol")))
+
+# Convert from Ensembl to Entrez
+converted <- bitr(
+    rownames(dds),
+    fromType = "ENSEMBL",
+    toType   = c("ENTREZID", "GENENAME", "SYMBOL"),
+    OrgDb    = "org.Hs.eg.db"
+  )
+
+# Merge and filter to valid Entrez IDs
+dds$ensembl_id <- rownames(dds)
+dds <- dplyr::left_join(converted, dds,
+                               by = c("ENSEMBL" = "ensembl_id"))
+dds <- dds[!is.na(dds$ENTREZID), ]
+
+# Store final dataset
+dds_ileocecal <- dds
+
+# Add a significance cutoff (e.g., padj < 0.05 and log2FoldChange > 1)
+res_df_ileocecal <- dds_ileocecal %>%
+  mutate(significant = ifelse(padj < 0.05 & abs(log2FoldChange) > 1, "Significant", "Not significant"))
+
+# Add a direction column based on log2FoldChange and padj
+res_df_ileocecal <- res_df_ileocecal %>%
+  mutate(direction = case_when(
+    padj < 0.05 & log2FoldChange > 1  ~ "Up",
+    padj < 0.05 & log2FoldChange < -1 ~ "Down",
+    TRUE                              ~ "NS"
+  ))
+```
+
+### GO enrichment distal small intestines
+```{r}
+# Perform enrichGO analysis on all significant genes
+ego_all_ileocecal <- enrichGO(
+  gene          = dds_ileocecal %>% filter(padj < 0.05) %>% pull(ENSEMBL),
+  OrgDb         = org.Hs.eg.db,
+  ont           = "BP",             # Biological Processes
+  keyType       = "ENSEMBL",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  qvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+
+# 3. Visualise the top GO terms
+heatmap_GO_ileocecal <- as.data.frame(ego_all_ileocecal)[1:20,] %>% 
+  filter(!is.na(Description)) %>% 
+  ggplot(aes(x = "GO pathways", y = reorder(capitalize_first(Description), -log10(p.adjust)))) +
+  geom_tile(aes(fill = -log10(p.adjust))) +
+  scale_fill_gradient(high = "#c7e9c0", low =  "#41ab5d") +
+  labs(
+    x = NULL,
+    y = NULL,
+    fill = "-log10(P adj)",
+  ) +
+  theme_gut()+
+  theme(axis.text.x = element_blank())
+
+# Display the heatmap
+print(heatmap_GO_ileocecal)
+
+# Save the heatmap to a PowerPoint file
+#graph2ppt(x = heatmap_GO_ileocecal, "heatmap_GO_ileocecal", width = 17/3, height = 12/3)
+```
+
+###Volcano Plot distal small intestines
+```{r}
+# Identify top genes for labeling in the volcano plot
+top_genes <- res_df_ileocecal %>% 
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>%
+  distinct(ENSEMBL, .keep_all = TRUE) %>% 
+  filter(direction != "NS") %>%
+  group_by(direction) %>%
+  slice_min(order_by = padj, n = 25) %>% 
+  ungroup() 
+
+# Create the volcano plot
+volcano_plot_ileocecal <- ggplot(res_df_ileocecal, aes(x = log2FoldChange, y = -log10(padj), color = direction)) +
+  geom_point(alpha = 0.3, size = 1) +
+  geom_point(data = top_genes, aes(x = log2FoldChange, y = -log10(padj), color = direction), size = 2.5) +  # Larger points
+  geom_text_repel(
+  data = top_genes,
+  aes(label = SYMBOL, color = direction),
+  size = 4,
+  max.overlaps = 50,
+) + 
+  scale_color_manual(values = c("Down" = "#2166ac", "Up" = "#b2182b", "NS" = "grey70")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "grey50") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "grey50") +
+  theme_gut() +
+  labs(
+    x = "Log2 Fold Change",
+    y = "-Log10 Adjusted P-value",
+    color = "Regulation"
+  ) +
+    theme(legend.position = "none") + 
+  xlim(-20,20)
+  
+# Display the volcano plot
+print(volcano_plot_ileocecal)
+
+# Save the volcano plot to a PowerPoint file
+#graph2ppt(x = volcano_plot_ileocecal, "volcano_plot_ileocecal", width = 20.37/2.5, height = 11.99/2.5)
+
+```
+
+
+##Test dds large intestines 
+###Setup for analysis
+```{r}
+# Subset data for large intestine
+design. <- subset(design_df, as.numeric(Location.num) > 10)
+count. <- df[, rownames(design.)]
+
+# Create DESeq2 object and normalize
+dds. <- DESeqDataSetFromMatrix(count., design., design = ~ID)
+ddsTT <- dds.
+ddsTT$Tissue <- factor(ddsTT$Tissue, levels = c("Cecum", "Ascending colon", "Transverse colon", "Descending colon", "Sigmoideum", "Rectum"))
+ddsTT$Treatment <- factor(ddsTT$Treatment, levels = c("T2DM", "Kontrol"))
+design(ddsTT) <- ~ Tissue + Treatment
+ddsTT <- DESeq(ddsTT)
+
+# Differential expression analysis
+ddsT <- as.data.frame(results(ddsTT, contrast = c("Treatment", "T2DM", "Kontrol"))) 
+
+# Save the DESeq2 object for further analysis
+save(ddsT, file = "forlargeintestinalanalysis.RData")
+```
+
+###Run analysis
+```{r}
+load("forlargeintestinalanalysis.RData")
+
+# Convert from Ensembl to Entrez
+converted <- bitr(
+    rownames(ddsT),
+    fromType = "ENSEMBL",
+    toType   = c("ENTREZID", "GENENAME", "SYMBOL"),
+    OrgDb    = "org.Hs.eg.db"
+  )
+# Merge and filter to valid Entrez IDs
+ddsT$ensembl_id <- rownames(ddsT)
+ddsT <- dplyr::left_join(converted, ddsT,
+                               by = c("ENSEMBL" = "ensembl_id"))
+ddsT <- ddsT[!is.na(dds$ENTREZID), ]
+# Store final dataset
+ddsT_large <- ddsT
+
+# Add a significance cutoff (e.g., padj < 0.05 and log2FoldChange > 1)
+res_df_large <- ddsT_large %>% 
+  mutate(significant = ifelse(padj < 0.05 & abs(log2FoldChange) > 1, "Significant", "Not significant"))
+
+# Add a direction column based on log2FoldChange and padj
+res_df_large <- res_df_large %>%
+  mutate(direction = case_when(
+    padj < 0.05 & log2FoldChange > 1  ~ "Up",
+    padj < 0.05 & log2FoldChange < -1 ~ "Down",
+    TRUE                              ~ "NS"
+  ))
+```
+
+### GO enrichment large intestines
+```{r}
+# Perform enrichGO analysis on all significant genes
+ego_all_large <- enrichGO(
+  gene          = (ddsT_large %>% filter(padj < 0.05) %>% pull(ENSEMBL)),
+  OrgDb         = org.Hs.eg.db,
+  ont           = "BP",             # Biological Processes
+  keyType       = "ENSEMBL",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  qvalueCutoff  = 0.05,
+  readable      = TRUE
+) %>% arrange(p.adjust) %>% as.data.frame()
+
+# Visualise the top GO terms
+heatmap_GO_large <- as.data.frame(ego_all_large)[1:20,] %>% 
+  filter(!is.na(Description)) %>% 
+  ggplot(aes(x = "GO pathways", y = reorder(capitalize_first(Description), -log10(p.adjust)))) +
+  geom_tile(aes(fill = -log10(p.adjust))) +
+  scale_fill_gradient(high = "#c7e9c0", low =  "#41ab5d") +
+  labs(
+    x = NULL,
+    y = NULL,
+    fill = "-log10(P adj)",
+  ) +
+  theme_gut()+
+  theme(axis.text.x = element_blank())
+
+# Display the heatmap
+print(heatmap_GO_large)
+
+# Save the heatmap to a PowerPoint file
+#graph2ppt(x = heatmap_GO_large, "heatmap_GO_large", width = 17/3, height = 12/3)
+```
+
+###Volcane Plot large intestines
+```{r}
+# Identify top genes for labeling in the volcano plot
+top_genes <- res_df_large %>% 
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>%
+  distinct(ENSEMBL, .keep_all = TRUE) %>% 
+  filter(direction != "NS") %>%
+  group_by(direction) %>%
+  slice_min(order_by = padj, n = 25) %>% 
+  ungroup() 
+
+# Create the volcano plot
+volcano_plot_large <- ggplot(res_df_large, aes(x = log2FoldChange, y = -log10(padj), color = direction)) +
+  geom_point(alpha = 0.3, size = 1) +
+  geom_point(data = top_genes, aes(x = log2FoldChange, y = -log10(padj), color = direction), size = 2.5) +  # Larger points
+  geom_text_repel(
+  data = top_genes,
+  aes(label = SYMBOL, color = direction),
+  size = 4,
+  max.overlaps = 50
+) + 
+  scale_color_manual(values = c("Down" = "#2166ac", "Up" = "#b2182b", "NS" = "grey70")) +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "grey50") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "grey50") +
+  theme_gut() +
+  labs(
+    x = "Log2 Fold Change",
+    y = "-Log10 Adjusted P-value",
+    color = "Regulation"
+  ) +
+    theme(legend.position = "none") + 
+  xlim(-3,3)
+
+# Display the volcano plot
+print(volcano_plot_large)
+
+# Save the volcano plot to a PowerPoint file
+#graph2ppt(x = volcano_plot_large, "volcano_plot_large", width = 20.37/2.5, height = 11.99/2.5)
+```
+
+###RPKM plot of individual genes across 16 anatomical regions of the intestine
+```{r, echo=FALSE, results='hide', fig.keep='none'}
+
+#Plot gene expression for individual genes across all regions
+plot_gene_expression <- function(expr_df, gene_id, 
+                                     gene_info_small = res_df_small,
+                                     gene_info_ileocecal = res_df_ileocecal,
+                                     gene_info_large = res_df_large) {
+  # Region labels for x-axis
+  labeltext <- c('Duodenum', 'Treitz','3','4','5','6','7','8','9','Ileocaecal',"Caecum", "Asc. colon", "Trans. colon", "Desc. colon", "Sigmoideum", "Rectum")
+
+  
+  # 1. Filter RPKM data for selected gene
+  plot_df <- expr_df %>%
+    filter(ENSEMBL == gene_id) 
+ 
+  # 2. Helper function: Format direction + padj or NS
+format_stats <- function(df, region_name) {
+  row <- df %>% filter(ENSEMBL == gene_id)
+  if (nrow(row) == 0 || any(is.na(row$padj))) return(paste0(region_name, ": NS"))
+  
+  row <- row %>% arrange(padj) %>% slice(1)  # pick the "most significant" one if duplicates
+  
+  if (row$padj < 0.05) {
+    arrow <- ifelse(row$log2FoldChange > 0, "↑", "↓")
+    padj_label <- formatC(row$padj, format = "e", digits = 2)
+    return(paste0(region_name, ":", arrow, "padj = (", padj_label, ")"))
+  } else {
+    return(paste0(region_name, ": NS"))
+  }
+}
+
+  # 3. Build subtitle with all 3 regions
+  subtitle_text <- paste(
+    format_stats(gene_info_small, "Small intestine"),
+    format_stats(gene_info_ileocecal, "Ileocaecal"),
+    format_stats(gene_info_large, "Large intestine"),
+    sep = " "
+  )
+
+  # 4. Get gene name and description
+  symbol <- unique(plot_df$SYMBOL)
+  description <- unique(plot_df$GENENAME)
+
+  # 5. Compute group-wise mean expression
+  line_df <- plot_df %>%
+    group_by(Type, Location) %>%
+    summarise(mean_expression = mean(Expression, na.rm = TRUE), .groups = "drop")
+
+  # 6. Plot
+  ggplot(plot_df, aes(x = Location, y = Expression)) +
+    annotate("rect", xmin = 10.5, xmax = 16.7, ymin = -Inf, ymax = Inf, fill = "grey", alpha = 0.5) +
+    geom_point(aes(color = Type), 
+               position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.6),
+               alpha = 0.3, size = 1.2) +
+    geom_line(data = line_df, aes(y = mean_expression, group = Type, color = Type), size = 1.3) +
+    scale_color_manual(values = c("Kontrol" = "grey33", "T2DM" = "#4292c6"),   
+                       labels = c("Kontrol" = "Control", "T2DM" = "T2D")
+) +
+    theme_GE() +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+          axis.title.x = element_blank(),
+          axis.title.y = element_text(size = 16),
+          plot.subtitle = element_text(size = 15),  # smaller subtitle
+          legend.position = c(.17, .95),
+          legend.justification = c("right", "top"),
+          legend.box.just = "right",
+          legend.title = element_blank(),
+          legend.text = element_text(size = 16),
+          legend.margin = margin(6, 6, 6, 6)) +
+    labs(
+      y = paste0(symbol, " expression (RPKM)"),
+      title = paste0(capitalize_first(description), " (", symbol,")"),
+      subtitle = subtitle_text
+    ) + 
+    scale_x_discrete(labels = labeltext)
+}
+
+# Choose genes to plot
+gene_names <- unique(c("ENSG00000160221", "ENSG00000124701", "ENSG00000179344" )) #Genes small intestine
+gene_names <- unique(c("ENSG00000148346", "ENSG00000166816", "ENSG00000272398" )) #Genes ileocecal 
+gene_names <- unique(c("ENSG00000156284", "ENSG00000050555", "ENSG00000117148" )) #Genes large 
+
+  # Loop through each gene and save plots individually
+for (gene_id in gene_names) {
+  plot <- plot_gene_expression(rpkm_annotated, gene_id)
+  print(plot)
+  # Save the plot to a PowerPoint file
+  #graph2ppt(x = plot, paste0(gene_id, "_expression.pptx"), width = 8.887, height = 4.9)
+}
+```
+
+
+
+#Single cell analysis
+#Load everything in
+```{r,eval=T}
+library(ggplot2)
+library(dplyr)
+
+umap_info_small <- read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851431_UMAP_info.txt')
+
+umap_info_large <- read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851005_UMAP_info.txt')
+
+expression_small=read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851431_Normalized_values.txt')
+
+expression_large=read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851005_Normalized_values.txt')
+
+
+gene2acc=read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/Gene2Ensembl.txt') #This one translates gene names to ensembl IDs
+
+
+# Rename column in gene2acc to match for join
+gene2acc <- gene2acc %>%
+  dplyr::rename(ENSEMBL = ensembl_gene_id)
+
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/res_df_small.RData")
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/res_df_ileocecal.RData")
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/res_df_large.RData")
+
+ranked_cells_large <- c(
+  # Stromal
+  "fibroblast",
+  "myofibroblast cell",
+  "colon endothelial cell",
+  "enteroglial cell",
+
+  # Epithelial
+  "enterocyte of epithelium of large intestine",
+  "large intestine goblet cell",
+  "paneth cell of colon",
+  "tuft cell of colon",
+  "type l enteroendocrine cell",
+  "enterochromaffin-like cell",
+  "transit amplifying cell of colon",
+  "intestinal crypt stem cell of colon",
+  "best4+ intestinal epithelial cell, human",
+
+  # Adaptive immune
+  "cd4-positive, alpha-beta t cell",
+  "cd8-positive, alpha-beta t cell",
+  "naive thymus-derived cd4-positive, alpha-beta t cell",
+  "gamma-delta t cell",
+  "regulatory t cell",
+  "mature nk t cell",
+  "b cell",
+  "plasma cell",
+
+  # Innate immune
+  "natural killer cell",
+  "innate lymphoid cell",
+  "monocyte",
+  "colon macrophage",
+  "myeloid dendritic cell",
+  "neutrophil",
+  "mast cell",
+  "myeloid leukocyte"
+)
+
+gaps_col_large <- c(
+  4,                     # After stromal
+  13,                    # After epithelial
+  21                     # After adaptive immune
+)
+
+epithelial_cells <- c(
+  "enterocyte of epithelium proper of duodenum",
+  "enterocyte of epithelium proper of jejunum",
+  "enterocyte of epithelium proper of ileum",
+  "enterocyte of epithelium proper of small intestine",
+  "small intestine goblet cell",
+  "enteroendocrine cell of small intestine",
+  "intestinal tuft cell",
+  "paneth cell of epithelium of small intestine",
+  "transit amplifying cell of small intestine",
+  "intestinal crypt stem cell of small intestine",
+  "best4+ intestinal epithelial cell, human"
+)
+stromal_cells <- c(
+  "fibroblast",
+  "myofibroblast cell",
+  "enteroglial cell",
+  "pericyte",
+  "endothelial cell of arteriole",
+  "endothelial cell of venule",
+  "endothelial cell of lymphatic vessel"
+)
+adaptive_cells <- c(
+  "cd4-positive, alpha-beta t cell",
+  "activated cd4-positive, alpha-beta t cell",
+  "cd8-positive, alpha-beta t cell",
+  "activated cd8-positive, alpha-beta t cell",
+  "naive thymus-derived cd4-positive, alpha-beta t cell",
+  "regulatory t cell",
+  "gamma-delta t cell",
+  "b cell",
+  "plasma cell"
+)
+innate_cells <- c(
+  "natural killer cell",
+  "innate lymphoid cell",
+  "monocyte",
+  "macrophage",
+  "myeloid dendritic cell",
+  "neutrophil",
+  "mast cell"
+)
+ranked_cells_small <- c(
+  stromal_cells,
+  epithelial_cells,
+  adaptive_cells,
+  innate_cells
+)
+
+gaps_col_small <- c(
+  length(stromal_cells),                                # after stromal
+  length(stromal_cells) + length(epithelial_cells),     # after epithelial
+  length(stromal_cells) + length(epithelial_cells) + length(adaptive_cells)  # after adaptive
+)
+
+```
+
+#Plotting UMAPs
+```{r,eval=T}
+###Plot a UMAP_small
+#Points in space...
+ggplot(umap_info_small, aes(Xumap_1,Xumap_2))+
+  geom_point()+
+  theme_minimal()
+
+#Coloured by celltype annotation
+ggplot(umap_info_small, aes(Xumap_1,Xumap_2, fill=ident))+
+  geom_point(pch=21)+
+  theme_minimal()
+
+###Plot a UMAP large
+#Points in space...
+ggplot(umap_info_large, aes(Xumap_1,Xumap_2))+
+  geom_point()+
+  theme_minimal()
+
+#Coloured by celltype annotation
+ggplot(umap_info_large, aes(Xumap_1,Xumap_2, fill=ident))+
+  geom_point(pch=21)+
+  theme_minimal()
+
+
+### Plot expression of gene projected on UMAP (mimics function featurePlot in seurat)
+#Quick little function for that
+
+plot_genes_on_umap=function(my_gene){
+  
+  plot_this=data.frame(cell=colnames(expression),
+                       Expression=expression[my_gene,] %>% unlist())
+  plot_this$cell=gsub("[.]", "-",plot_this$cell)
+  
+  plot_this=merge(umap_info, plot_this, by="cell")
+  
+  p=ggplot(plot_this, aes(Xumap_1, Xumap_2, col=Expression))+
+    geom_point(size=0.7)+
+    theme_minimal()+
+    scale_color_gradient(low="LightGrey",high = "Blue4") #Bare ret hvis du synes farve skala er træls!
+  
+  return(p)
+}
+
+col1a1_plot=plot_genes_on_umap("COL1A1")
+
+```
+#Plot heatmap of DEGs 
+##Plot heatmap - Small intestine
+```{r,eval=T}
+
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+# Join HGNC symbols to res_df_small
+number_of_genes <- 75
+# Join HGNC symbols to res_df_ileo
+genes_to_plot <- res_df_small %>%
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>% 
+  arrange(pvalue) %>%
+  slice_head(n = number_of_genes) %>%
+  rename(hgnc_symbol = SYMBOL) %>%
+  dplyr::filter(hgnc_symbol %in% rownames(expression_small)) %>%
+  dplyr::distinct(hgnc_symbol, .keep_all = TRUE) %>% 
+  pull(hgnc_symbol)
+
+heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_small$cell <- rownames(umap_info_small)
+
+# Now merge should work
+heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+
+# Scale
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Step 1: Create named vector of colours for row annotation
+gene_colors <- res_df_small %>%
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>% 
+arrange(pvalue) %>%
+  slice_head(n = number_of_genes) %>%
+  rename(hgnc_symbol = SYMBOL) %>%
+  dplyr::select(hgnc_symbol, log2FoldChange) %>%
+  dplyr::mutate(direction = ifelse(log2FoldChange > 0, "Upregulated", "Downregulated")) %>%
+  dplyr::filter(hgnc_symbol %in% rownames(heat)) %>%
+  dplyr::distinct(hgnc_symbol, .keep_all = TRUE)
+
+# Create annotation row with labels
+annotation_row <- data.frame(Regulation = gene_colors$direction)
+rownames(annotation_row) <- gene_colors$hgnc_symbol
+
+# Create annotation row with labels
+annotation_row <- data.frame(Direction = gene_colors$direction)
+rownames(annotation_row) <- gene_colors$hgnc_symbol
+
+annotation_colors <- list(Direction = c("Upregulated" = "#b2182b", "Downregulated" = "#2166ac"))
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_small]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+small_intestines_DEG_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_small,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45, # Rotate column labels
+  annotation_row = annotation_row,
+  annotation_colors = annotation_colors
+)
+
+small_intestines_DEG_SC
+
+graph2ppt(x = small_intestines_DEG_SC, 
+          "small_intestines_DEG_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+
+```
+
+##Plot heatmap - Ileocecal region
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+number_of_genes <- 75
+# Join HGNC symbols to res_df_ileo
+genes_to_plot <- res_df_ileocecal %>%
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>% 
+  arrange(pvalue) %>%
+  slice_head(n = number_of_genes) %>%
+  rename(hgnc_symbol = SYMBOL) %>%
+  dplyr::filter(hgnc_symbol %in% rownames(expression_small)) %>%
+  dplyr::distinct(hgnc_symbol, .keep_all = TRUE) %>% 
+  pull(hgnc_symbol)
+
+heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_small$cell <- rownames(umap_info_small)
+
+# Now merge should work
+heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Step 1: Create named vector of colours for row annotation
+gene_colors <- res_df_ileocecal %>%
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>% 
+arrange(pvalue) %>%
+  slice_head(n = number_of_genes) %>%
+  rename(hgnc_symbol = SYMBOL) %>%
+  dplyr::select(hgnc_symbol, log2FoldChange) %>%
+  dplyr::mutate(direction = ifelse(log2FoldChange > 0, "Upregulated", "Downregulated")) %>%
+  dplyr::filter(hgnc_symbol %in% rownames(heat)) %>%
+  dplyr::distinct(hgnc_symbol, .keep_all = TRUE)
+
+# Create annotation row with labels
+annotation_row <- data.frame(Direction = gene_colors$direction)
+rownames(annotation_row) <- gene_colors$hgnc_symbol
+
+# Create annotation row with labels
+annotation_row <- data.frame(Direction = gene_colors$direction)
+rownames(annotation_row) <- gene_colors$hgnc_symbol
+
+annotation_colors <- list(Direction = c("Upregulated" = "#b2182b", "Downregulated" = "#2166ac"))
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_small]
+
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+ileocecal_DEG_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_small,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45, # Rotate column labels
+  annotation_row = annotation_row,
+  annotation_colors = annotation_colors
+)
+
+ileocecal_DEG_SC
+
+graph2ppt(x = ileocecal_DEG_SC, 
+          "ileocecal_DEG_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+
+##Plot heatmap - Large intestine
+```{r,eval=T}
+
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+number_of_genes <- 81
+# Join HGNC symbols to res_df_large
+genes_to_plot <- res_df_large %>%
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>% 
+  arrange(pvalue) %>%
+  slice_head(n = number_of_genes) %>%
+  rename(hgnc_symbol = SYMBOL) %>%
+  dplyr::filter(hgnc_symbol %in% rownames(expression_large)) %>%
+  dplyr::distinct(hgnc_symbol, .keep_all = TRUE) %>% 
+  pull(hgnc_symbol)
+
+heat=expression_large[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_large$cell <- rownames(umap_info_large)
+
+# Now merge should work
+heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+colnames(heat)
+
+# Step 1: Create named vector of colours for row annotation
+gene_colors <- res_df_large %>%
+  filter(padj < 0.05 & abs(log2FoldChange) > 1) %>% 
+arrange(pvalue) %>%
+  slice_head(n = number_of_genes) %>%
+  rename(hgnc_symbol = SYMBOL) %>%
+  dplyr::select(hgnc_symbol, log2FoldChange) %>%
+  dplyr::mutate(direction = ifelse(log2FoldChange > 0, "Upregulated", "Downregulated")) %>%
+  dplyr::filter(hgnc_symbol %in% rownames(heat)) %>%
+  dplyr::distinct(hgnc_symbol, .keep_all = TRUE)
+
+# Create annotation row with labels
+annotation_row <- data.frame(Direction = gene_colors$direction)
+rownames(annotation_row) <- gene_colors$hgnc_symbol
+
+annotation_colors <- list(Direction = c("Upregulated" = "#b2182b", "Downregulated" = "#2166ac"))
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_large]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+large_intestine_DEG_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_large,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45, # Rotate column labels
+  annotation_row = annotation_row,
+  annotation_colors = annotation_colors
+)
+
+large_intestine_DEG_SC
+
+graph2ppt(x = large_intestine_DEG_SC, 
+          "large_intestine_DEG_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+
+#Plot heatmap of Cluster in the Small intestine
+##Plot heatmap - Small intestine cluster 2
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_small_control.Rdata")
+
+# Join HGNC symbols to res_df_small
+genes_to_plot <- heat.cluster.$`2` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`2`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_small$cell <- rownames(umap_info_small)
+
+# Now merge should work
+heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_small]
+
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+
+small_intestine_cluster2_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_small,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+
+small_intestine_cluster2_SC
+
+graph2ppt(x = small_intestine_cluster2_SC, 
+          "small_intestine_cluster2_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+##Plot heatmap - Small intestine cluster 3
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
+
+# Join HGNC symbols to res_df_small
+genes_to_plot <- heat.cluster.$`3` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`3`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_small$cell <- rownames(umap_info_small)
+
+# Now merge should work
+heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_small]
+
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+small_intestine_cluster3_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_small,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+
+small_intestine_cluster3_SC
+
+graph2ppt(x = small_intestine_cluster3_SC, 
+          "small_intestine_cluster3_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+##Plot heatmap - Small intestine cluster 4
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
+
+number_of_genes <- 75
+# Join HGNC symbols to res_df_small
+genes_to_plot <- heat.cluster.$`4` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+#  dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`4`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_small$cell <- rownames(umap_info_small)
+
+# Now merge should work
+heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_small]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+small_intestine_cluster4_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_small,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+
+small_intestine_cluster4_SC
+
+graph2ppt(x = small_intestine_cluster4_SC, 
+          "small_intestine_cluster4_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+##Plot heatmap - Small intestine cluster 5
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
+
+number_of_genes <- 75
+# Join HGNC symbols to res_df_small
+genes_to_plot <- heat.cluster.$`5` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+ # dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`5`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_small$cell <- rownames(umap_info_small)
+
+# Now merge should work
+heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_small]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+small_intestine_cluster5_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_small,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+
+small_intestine_cluster5_SC
+
+graph2ppt(x = small_intestine_cluster5_SC, 
+          "small_intestine_cluster5_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+##Plot heatmap - Small intestine cluster 6
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
+
+number_of_genes <- 75
+# Join HGNC symbols to res_df_small
+genes_to_plot <- heat.cluster.$`6` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+#  dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`6`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_small$cell <- rownames(umap_info_small)
+
+# Now merge should work
+heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_small]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+small_intestine_cluster6_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_small,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+small_intestine_cluster6_SC
+
+graph2ppt(x = small_intestine_cluster6_SC, 
+          "small_intestine_cluster6_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+##Plot heatmap - Small intestine cluster 8
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
+
+number_of_genes <- 75
+# Join HGNC symbols to res_df_small
+genes_to_plot <- heat.cluster.$`8` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`8`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_small$cell <- rownames(umap_info_small)
+
+# Now merge should work
+heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_small]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+small_intestine_cluster8_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_small,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+
+small_intestine_cluster8_SC
+
+graph2ppt(x = small_intestine_cluster8_SC, 
+          "small_intestine_cluster8_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+
+#Plot heatmap of Cluster in the Large intestine
+#Plot heatmap - Large intestine cluster 1
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.large.Rdata")
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_large_control.Rdata")
+
+
+# Join HGNC symbols to res_df_Large
+genes_to_plot <- heat.cluster.$`1` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = 100) %>%
+  dplyr::pull(hgnc_symbol)
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`1`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_large[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_large$cell <- rownames(umap_info_large)
+
+# Now merge should work
+heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_large]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+large_intestine_cluster1_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_large,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+large_intestine_cluster1_SC
+
+graph2ppt(x = large_intestine_cluster1_SC, 
+          "large_intestine_cluster1_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+#Plot heatmap - Large intestine cluster 2
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+# Join HGNC symbols to res_df_Large
+genes_to_plot <- heat.cluster.$`2` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = 100) %>%
+  dplyr::pull(hgnc_symbol)
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`2`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_large[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_large$cell <- rownames(umap_info_large)
+
+# Now merge should work
+heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_large]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+
+large_intestine_cluster2_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_large,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+
+large_intestine_cluster2_SC
+
+graph2ppt(x = large_intestine_cluster2_SC, 
+          "large_intestine_cluster2_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+#Plot heatmap - Large intestine cluster 5
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+# Join HGNC symbols to res_df_Large
+genes_to_plot <- heat.cluster.$`5` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = 100) %>%
+  dplyr::pull(hgnc_symbol)
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`5`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_large[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_large$cell <- rownames(umap_info_large)
+
+# Now merge should work
+heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_large]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+large_intestine_cluster5_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_large,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+
+large_intestine_cluster5_SC
+
+graph2ppt(x = large_intestine_cluster5_SC, 
+          "large_intestine_cluster5_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+#Plot heatmap - Large intestine cluster 8
+```{r,eval=T}
+#####
+#Example: We have a list of genes of interest. Which cells are they predominantly expressed in? 
+#Since we have a list of genes, a heatmap would be nice
+#This heatmap uses averages expression of each gene within each celltype
+
+# Join HGNC symbols to res_df_Large
+genes_to_plot <- heat.cluster.$`8` %>%
+  tibble::enframe(name = NULL, value = "ENSEMBL") %>%
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = 100) %>%
+  dplyr::pull(hgnc_symbol)
+
+genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`8`[1, "geneID"]), "\\s"))) %>% 
+  dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
+  dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
+  #dplyr::slice_head(n = number_of_genes) %>%
+  dplyr::pull(hgnc_symbol)
+
+
+heat=expression_large[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
+heat$gene=rownames(heat)
+heat=reshape2::melt(heat, id.vars="gene")#Reformatting
+#heat$variable=gsub("[.]","-",heat$variable)
+
+# First, add the cell ID as a column if it's in the rownames
+umap_info_large$cell <- rownames(umap_info_large)
+
+# Now merge should work
+heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+
+heat=lapply(unique(heat$ident), function(x){
+  
+  tmp=heat %>% filter(ident==x)
+  tmp=tmp %>% group_by(gene) %>% dplyr::summarise(mean=mean(value)) %>% as.data.frame()
+  colnames(tmp)[2]=x
+  return(tmp)
+})
+
+heat=do.call(cbind,heat)
+rownames(heat)=heat$gene
+heat=heat[,colnames(heat) != "gene"]
+
+#We can´t scale genes if they are not detected. So remove all genes which have an average of 0 in all cells
+heat$max=apply(heat, 1,max) 
+heat=heat[heat$max > 0,]
+heat$max=NULL
+# Remove rows with zero variance (to avoid NaNs when scaling)
+row_sd <- apply(heat, 1, sd)
+heat <- heat[row_sd > 0, ]
+# Scale
+
+heat=t(scale(t(heat)))
+
+# Remove rows that became NA after scaling
+heat <- heat[complete.cases(heat), ]
+
+
+# Reorder columns of heat based on ranked cell types
+heat <- heat[, ranked_cells_large]
+
+# Clean up column names
+colnames(heat) <- gsub("-positive,", "+", colnames(heat))
+colnames(heat) <- gsub("alpha", "\u03B1", colnames(heat))
+colnames(heat) <- gsub("beta", "\u03B2", colnames(heat))
+colnames(heat) <- gsub("gamma", "\u03B3", colnames(heat))  # γ
+colnames(heat) <- gsub("delta", "\u03B4", colnames(heat))  # δ
+colnames(heat) <- gsub(" t ", " T ", colnames(heat))
+colnames(heat) <- gsub("nk", "NK", colnames(heat))
+colnames(heat) <- gsub(", human", "", colnames(heat))
+colnames(heat) <- gsub("\\s+", " ", colnames(heat))  # Collapse multiple spaces
+colnames(heat) <- trimws(colnames(heat))            # Trim leading/trailing spaces
+colnames(heat) <- gsub("of epithelium proper ", "", colnames(heat))
+colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
+colnames(heat) <- capitalize_first(colnames(heat))
+
+
+large_intestine_cluster8_SC<-pheatmap(
+  heat,                # Filtered expression matrix
+  cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
+  cluster_cols = FALSE,
+  #cutree_rows = 8, # Cut into 8 clusters
+  show_rownames = T,        # Hide row names for cleaner visualization
+  gaps_col = gaps_col_large,
+  scale = "row",                # Normalize rows (genes) for visualization
+  color = rev(getPalette(9)),   # Define custom color scheme for the heatmap
+  fontfamily = "Helvetica",      # Use Helvetica font for better readability
+  fontsize = 10,                 # Set font size for axis labels
+  fontsize_col = 12,                # Set font face for axis labels
+  treeheight_row = 0,            # Remove tree height to simplify the plot
+  treeheight_col = 0,            # Remove tree height to simplify the plot
+  width = 13.34,   # in inches
+  height = 11.14,   # in inches
+  angle_col = 45 # Rotate column labels
+)
+
+large_intestine_cluster8_SC
+
+graph2ppt(x = large_intestine_cluster8_SC, 
+          "large_intestine_cluster8_SC",
+          width = 13.34,   # in inches
+          height = 11.34   # in inches
+          )
+```
+
+
+
