@@ -1481,19 +1481,13 @@ for (gene_id in gene_names) {
 
 ### Load everything in
 
-```{r,eval=T}
+```{r}
 
 umap_info_small <- read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851431_UMAP_info.txt')
 
 umap_info_large <- read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851005_UMAP_info.txt')
 
-expression_small=read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851431_Normalized_values.txt')
-
-expression_large=read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851005_Normalized_values.txt')
-
-
 gene2acc=read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/Gene2Ensembl.txt') #This one translates gene names to ensembl IDs
-
 
 # Rename column in gene2acc to match for join
 gene2acc <- gene2acc %>%
@@ -1502,6 +1496,12 @@ gene2acc <- gene2acc %>%
 load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/res_df_small.RData")
 load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/res_df_ileocecal.RData")
 load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/res_df_large.RData")
+
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_small_control.Rdata")
+
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.large.Rdata")
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_large_control.Rdata")
 
 ranked_cells_large <- c(
   # Stromal
@@ -1607,37 +1607,42 @@ gaps_col_small <- c(
 
 ### Plotting UMAPs
 
-```{r,eval=T}
+```{r}
 ###Plot a UMAP_small
-#Points in space...
-ggplot(umap_info_small, aes(Xumap_1,Xumap_2))+
-  geom_point()+
-  theme_minimal()
-
 #Coloured by celltype annotation
 ggplot(umap_info_small, aes(Xumap_1,Xumap_2, fill=ident))+
   geom_point(pch=21)+
   theme_minimal()
 
 ###Plot a UMAP large
-#Points in space...
-ggplot(umap_info_large, aes(Xumap_1,Xumap_2))+
-  geom_point()+
-  theme_minimal()
-
 #Coloured by celltype annotation
 ggplot(umap_info_large, aes(Xumap_1,Xumap_2, fill=ident))+
   geom_point(pch=21)+
   theme_minimal()
 ```
 
+### Setup for analysis
+
+```{r}
+#| eval: false
+#| echo: true
+
+expression_small=read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851431_Normalized_values.txt')
+
+expression_large=read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851005_Normalized_values.txt')
+
+summary(expression_small)
+summary(expression_large)
+
+```
+
 # Plot heatmap of cluster in the healthy small intestine 
 ## Small intestine cluster 2 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_small_control.Rdata")
-
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_small
 genes_to_plot <- heat.cluster.$`2` %>%
   tibble::enframe(name = NULL, value = "ENSEMBL") %>%
@@ -1656,13 +1661,20 @@ heat=expression_small[genes_to_plot,]
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene") #Reformatting
 
-#heat$variable=gsub("[.]","-",heat$variable)
-
 # Add the cell ID as a column if it's in the rownames
 umap_info_small$cell <- rownames(umap_info_small)
 
 # Merge
 heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+#Save the heatmap data
+#save(heat, file = "heatmap_small_intestine_cluster2.Rdata")
+```
+
+### Plot heatmap of cluster 2
+```{r}
+# Load the heatmap data
+load("heatmap_small_intestine_cluster2.Rdata")
 
 # Group by ident and gene, and calculate the mean value for each gene in each cell type
 heat=lapply(unique(heat$ident), function(x){
@@ -1713,7 +1725,7 @@ colnames(heat) <- gsub("thymus-derived", "thymus", colnames(heat))
 colnames(heat) <- capitalize_first(colnames(heat))
 
 # Create the heatmap
-small_intestine_cluster2_SC<-pheatmap(
+ small_intestine_cluster2_SC<-pheatmap(
   heat,                # Filtered expression matrix
   cluster_rows = TRUE,          # Cluster rows (genes) hierarchically
   cluster_cols = FALSE,
@@ -1741,9 +1753,10 @@ print(small_intestine_cluster2_SC)
 
 ## Small intestine cluster 3 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
-
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_small
 genes_to_plot <- heat.cluster.$`3` %>%
   tibble::enframe(name = NULL, value = "ENSEMBL") %>%
@@ -1763,7 +1776,6 @@ genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.
 heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene")#Reformatting
-#heat$variable=gsub("[.]","-",heat$variable)
 
 # First, add the cell ID as a column if it's in the rownames
 umap_info_small$cell <- rownames(umap_info_small)
@@ -1771,6 +1783,14 @@ umap_info_small$cell <- rownames(umap_info_small)
 # Now merge should work
 heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
 
+#Save the heatmap data
+#save(heat, file = "heatmap_small_intestine_cluster3.Rdata")
+```
+
+### Plot heatmap of cluster 3
+```{r}
+# Load the heatmap data
+load("heatmap_small_intestine_cluster3.Rdata")
 
 heat=lapply(unique(heat$ident), function(x){
   
@@ -1791,6 +1811,7 @@ heat$max=NULL
 # Remove rows with zero variance (to avoid NaNs when scaling)
 row_sd <- apply(heat, 1, sd)
 heat <- heat[row_sd > 0, ]
+
 # Scale
 heat=t(scale(t(heat)))
 
@@ -1845,11 +1866,12 @@ print(small_intestine_cluster3_SC)
 
 ## Small intestine cluster 4 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
-
-number_of_genes <- 75
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_small
+number_of_genes <- 75
 genes_to_plot <- heat.cluster.$`4` %>%
   tibble::enframe(name = NULL, value = "ENSEMBL") %>%
   dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
@@ -1868,7 +1890,6 @@ genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.
 heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene")#Reformatting
-#heat$variable=gsub("[.]","-",heat$variable)
 
 # First, add the cell ID as a column if it's in the rownames
 umap_info_small$cell <- rownames(umap_info_small)
@@ -1876,6 +1897,14 @@ umap_info_small$cell <- rownames(umap_info_small)
 # Now merge should work
 heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
 
+#Save the heatmap data
+#save(heat, file = "heatmap_small_intestine_cluster4.Rdata")
+```
+
+### Plot heatmap of cluster 4
+```{r}
+# Load the heatmap data
+load("heatmap_small_intestine_cluster4.Rdata")
 
 heat=lapply(unique(heat$ident), function(x){
   
@@ -1950,9 +1979,10 @@ print(small_intestine_cluster4_SC)
 
 ## Small intestine cluster 5 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
-
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 number_of_genes <- 75
 # Join HGNC symbols to res_df_small
 genes_to_plot <- heat.cluster.$`5` %>%
@@ -1969,11 +1999,9 @@ genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.
   #dplyr::slice_head(n = number_of_genes) %>%
   dplyr::pull(hgnc_symbol)
 
-
 heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene")#Reformatting
-#heat$variable=gsub("[.]","-",heat$variable)
 
 # First, add the cell ID as a column if it's in the rownames
 umap_info_small$cell <- rownames(umap_info_small)
@@ -1981,6 +2009,14 @@ umap_info_small$cell <- rownames(umap_info_small)
 # Now merge should work
 heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
 
+#Save the heatmap data
+#save(heat, file = "heatmap_small_intestine_cluster5.Rdata")
+```
+
+### Plot heatmap of cluster 5
+```{r}
+# Load the heatmap data
+load("heatmap_small_intestine_cluster5.Rdata")
 
 heat=lapply(unique(heat$ident), function(x){
   
@@ -2055,9 +2091,10 @@ print(small_intestine_cluster5_SC)
 
 ## Small intestine cluster 6 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
-
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 number_of_genes <- 75
 # Join HGNC symbols to res_df_small
 genes_to_plot <- heat.cluster.$`6` %>%
@@ -2074,11 +2111,9 @@ genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.
   #dplyr::slice_head(n = number_of_genes) %>%
   dplyr::pull(hgnc_symbol)
 
-
 heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene")#Reformatting
-#heat$variable=gsub("[.]","-",heat$variable)
 
 # First, add the cell ID as a column if it's in the rownames
 umap_info_small$cell <- rownames(umap_info_small)
@@ -2086,6 +2121,14 @@ umap_info_small$cell <- rownames(umap_info_small)
 # Now merge should work
 heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
 
+#Save the heatmap data
+#save(heat, file = "heatmap_small_intestine_cluster6.Rdata")
+```
+
+### Plot heatmap of cluster 6
+```{r}
+# Load the heatmap data
+load("heatmap_small_intestine_cluster6.Rdata")
 
 heat=lapply(unique(heat$ident), function(x){
   
@@ -2113,7 +2156,8 @@ heat=t(scale(t(heat)))
 # Remove rows that became NA after scaling
 heat <- heat[complete.cases(heat), ]
 
-# Reorder columns of heat based on ranked cell types
+# Reorder columns o
+f heat based on ranked cell types
 heat <- heat[, ranked_cells_small]
 
 # Clean up column names
@@ -2160,9 +2204,10 @@ print(small_intestine_cluster6_SC)
 
 ## Small intestine cluster 8 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
-
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 number_of_genes <- 75
 # Join HGNC symbols to res_df_small
 genes_to_plot <- heat.cluster.$`8` %>%
@@ -2172,18 +2217,15 @@ genes_to_plot <- heat.cluster.$`8` %>%
   #dplyr::slice_head(n = number_of_genes) %>%
   dplyr::pull(hgnc_symbol)
 
-
 genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.go.$`8`[1, "geneID"]), "\\s"))) %>% 
   dplyr::left_join(gene2acc, by = "ENSEMBL") %>%
   dplyr::relocate(hgnc_symbol, .after = ENSEMBL) %>%
   #dplyr::slice_head(n = number_of_genes) %>%
   dplyr::pull(hgnc_symbol)
 
-
 heat=expression_small[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene")#Reformatting
-#heat$variable=gsub("[.]","-",heat$variable)
 
 # First, add the cell ID as a column if it's in the rownames
 umap_info_small$cell <- rownames(umap_info_small)
@@ -2191,6 +2233,15 @@ umap_info_small$cell <- rownames(umap_info_small)
 # Now merge should work
 heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
 
+
+#Save the heatmap data
+#save(heat, file = "heatmap_small_intestine_cluster8.Rdata")
+```
+
+### Plot heatmap of cluster 8
+```{r}
+# Load the heatmap data
+load("heatmap_small_intestine_cluster8.Rdata")
 
 heat=lapply(unique(heat$ident), function(x){
   
@@ -2266,11 +2317,10 @@ print(small_intestine_cluster8_SC)
 #Plot heatmap of cluster in the healthy large intestine 
 ## Large intestine cluster 1 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.large.Rdata")
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_large_control.Rdata")
-
-
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_Large
 genes_to_plot <- heat.cluster.$`1` %>%
   tibble::enframe(name = NULL, value = "ENSEMBL") %>%
@@ -2285,7 +2335,6 @@ genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.
   #dplyr::slice_head(n = number_of_genes) %>%
   dplyr::pull(hgnc_symbol)
 
-
 heat=expression_large[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene")#Reformatting
@@ -2297,6 +2346,14 @@ umap_info_large$cell <- rownames(umap_info_large)
 # Now merge should work
 heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
 
+#Save the heatmap data
+#save(heat, file = "heatmap_large_intestine_cluster1.Rdata")
+```
+
+### Plot heatmap of cluster 1
+```{r}
+# Load the heatmap data
+load("heatmap_large_intestine_cluster1.Rdata")
 
 heat=lapply(unique(heat$ident), function(x){
   
@@ -2371,9 +2428,10 @@ print(large_intestine_cluster1_SC)
 
 ## Large intestine cluster 2 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.large.Rdata")
-
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_Large
 genes_to_plot <- heat.cluster.$`2` %>%
   tibble::enframe(name = NULL, value = "ENSEMBL") %>%
@@ -2400,6 +2458,14 @@ umap_info_large$cell <- rownames(umap_info_large)
 # Now merge should work
 heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
 
+#Save the heatmap data
+#save(heat, file = "heatmap_lrge_intestine_cluster2.Rdata")
+```
+
+### Plot heatmap of cluster 2
+```{r}
+# Load the heatmap data
+load("heatmap_large_intestine_cluster2.Rdata")
 
 heat=lapply(unique(heat$ident), function(x){
   
@@ -2475,9 +2541,10 @@ print(large_intestine_cluster2_SC)
 
 ## Large intestine cluster 5 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.large.Rdata")
-
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_Large
 genes_to_plot <- heat.cluster.$`5` %>%
   tibble::enframe(name = NULL, value = "ENSEMBL") %>%
@@ -2492,7 +2559,6 @@ genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.
   #dplyr::slice_head(n = number_of_genes) %>%
   dplyr::pull(hgnc_symbol)
 
-
 heat=expression_large[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene")#Reformatting
@@ -2504,6 +2570,14 @@ umap_info_large$cell <- rownames(umap_info_large)
 # Now merge should work
 heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
 
+#Save the heatmap data
+#save(heat, file = "heatmap_lrge_intestine_cluster5.Rdata")
+```
+
+### Plot heatmap of cluster 5
+```{r}
+# Load the heatmap data
+load("heatmap_large_intestine_cluster5.Rdata")
 
 heat=lapply(unique(heat$ident), function(x){
   
@@ -2578,9 +2652,10 @@ print(large_intestine_cluster5_SC)
 
 ## Large intestine cluster 8 - Plot heatmap
 
-```{r,eval=T}
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.large.Rdata")
-
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_Large
 genes_to_plot <- heat.cluster.$`8` %>%
   tibble::enframe(name = NULL, value = "ENSEMBL") %>%
@@ -2595,11 +2670,9 @@ genes_to_plot <- data.frame(ENSEMBL = unlist(strsplit(gsub("/", " ", heat.clust.
   #dplyr::slice_head(n = number_of_genes) %>%
   dplyr::pull(hgnc_symbol)
 
-
 heat=expression_large[genes_to_plot,]#Subsetting expression dataframe of genes of interest (goi)
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene")#Reformatting
-#heat$variable=gsub("[.]","-",heat$variable)
 
 # First, add the cell ID as a column if it's in the rownames
 umap_info_large$cell <- rownames(umap_info_large)
@@ -2607,6 +2680,14 @@ umap_info_large$cell <- rownames(umap_info_large)
 # Now merge should work
 heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
 
+#Save the heatmap data
+#save(heat, file = "heatmap_large_intestine_cluster8.Rdata")
+```
+
+### Plot heatmap of cluster 8
+```{r}
+# Load the heatmap data
+load("heatmap_large_intestine_cluster8.Rdata")
 
 heat=lapply(unique(heat$ident), function(x){
   
@@ -2683,9 +2764,12 @@ print(large_intestine_cluster8_SC)
 
 # Plot DEGs in single cells
 
-### Small intestines - Heatmap
+## Small intestines - Heatmap
 
-```{r,eval=T}
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_small
 number_of_genes <- 75
 genes_to_plot <- res_df_small %>%
@@ -2702,13 +2786,20 @@ heat=expression_small[genes_to_plot,]
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene") #Reformatting
 
-#heat$variable=gsub("[.]","-",heat$variable)
-
 # Add the cell ID as a column if it's in the rownames
 umap_info_small$cell <- rownames(umap_info_small)
 
 # Merge
 heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+#Save the heatmap data
+#save(heat, file = "heatmap_small_intestine_DEG.Rdata")
+```
+
+### Plot heatmap of DEGs in small intestines
+```{r}
+# Load the heatmap data
+load("heatmap_small_intestine_DEG.Rdata")
 
 # Group by ident and gene, and calculate the mean value for each gene in each cell type
 heat=lapply(unique(heat$ident), function(x){
@@ -2811,7 +2902,10 @@ print(small_intestines_DEG_SC)
 
 ## Distal small intestines - Heatmap
 
-```{r,eval=T}
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_ileocecal
 number_of_genes <- 75
 genes_to_plot <- res_df_ileocecal %>%
@@ -2828,13 +2922,20 @@ heat=expression_small[genes_to_plot,]
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene") #Reformatting
 
-#heat$variable=gsub("[.]","-",heat$variable)
-
 # Add the cell ID as a column if it's in the rownames
 umap_info_small$cell <- rownames(umap_info_small)
 
 # Merge
 heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+#Save the heatmap data
+#save(heat, file = "heatmap_distal_small_intestine_DEG.Rdata")
+```
+
+### Plot heatmap of DEGs in distal small intestines
+```{r}
+# Load the heatmap data
+load("heatmap_distal_small_intestine_DEG.Rdata")
 
 # Group by ident and gene, and calculate the mean value for each gene in each cell type
 heat=lapply(unique(heat$ident), function(x){
@@ -2932,7 +3033,10 @@ print(ileocecal_DEG_SC)
 
 ## Large intestines - Heatmap
 
-```{r,eval=T}
+### Setup for analysis
+```{r}
+#| eval: false
+#| echo: true
 # Join HGNC symbols to res_df_large
 number_of_genes <- 81 # Some are dublicates and will be removed later, the final figure will have 75 genes
 genes_to_plot <- res_df_large %>%
@@ -2949,13 +3053,20 @@ heat=expression_large[genes_to_plot,]
 heat$gene=rownames(heat)
 heat=reshape2::melt(heat, id.vars="gene")#Reformatting
 
-#heat$variable=gsub("[.]","-",heat$variable)
-
 # Add the cell ID as a column if it's in the rownames
 umap_info_large$cell <- rownames(umap_info_large)
 
 # Merge
 heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
+
+#Save the heatmap data
+#save(heat, file = "heatmap_large_intestine_DEG.Rdata")
+```
+
+### Plot heatmap of DEGs in large intestines
+```{r}
+# Load the heatmap data
+load("heatmap_large_intestine_DEG.Rdata")
 
 # Group by ident and gene, and calculate the mean value for each gene in each cell type
 heat=lapply(unique(heat$ident), function(x){
