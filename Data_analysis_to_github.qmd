@@ -1,5 +1,9 @@
 ---
-title: "GUT_review_1_Data_analysis"
+project:
+  type: website
+  output-dir: docs
+
+title: "Mucosal transcriptomic landscape along the small and large intestines in individuals with and without type 2 diabetes"
 format: html
 editor: visual
 ---
@@ -619,6 +623,8 @@ The script:
 This script takes a long time to run, and results have already been saved.
 
 ```{r}
+#| eval: false
+#| echo: true
 ## Step 1: Filter Small Intestine Samples
 # - Select only samples from the small intestine (Location.num < 11).
 # - This ensures we are analyzing only the small intestine while excluding large intestine segments.
@@ -757,7 +763,6 @@ rownames(mean.by.tissue.) <- rownames(vst_values.)
 ```
 
 ## Heatmap Small
-
 ```{r}
 ## Step 1: Load Previously Saved Data
 # - These files contain the results from the previous analysis
@@ -794,7 +799,6 @@ heat.res.row.graph <- pheatmap(
 ```
 
 ## Heatmap Large
-
 ```{r}
 ## Step 1: Load Previously Saved Data
 # - These files contain the results from the previous analysis
@@ -830,7 +834,6 @@ heat.res.row.graph <- pheatmap(
 ```
 
 ## Healthy intestines - Plot individual clusters
-
 ```{r}
 ## Set to "small" or "large"
 region <- "small"
@@ -920,8 +923,8 @@ heat.clust.go. <- lapply(heat.cluster., function(gene_ids) {
 })
 names(heat.clust.go.) <- clusters.num
 
-genes.in.cluster
-heat.clust.go.
+summary(genes.in.cluster)
+summary(heat.clust.go.)
 
 ## Convert cluster column to factor
 heat.$cluster <- factor(heat.$cluster, levels = clusters.num)
@@ -981,8 +984,9 @@ for (i in levels(heat.$cluster)) {
 ## Type 2 diabetes - Analysis of the small intestines 
 
 ### Small intestines - Setup for analysis
-
 ```{r}
+#| eval: false
+#| echo: true
 # Subset data for small intestine samples
 design. <- subset(design_df, as.numeric(Location.num) %in% 1:6) 
 count. <- df[, rownames(design.)]
@@ -1004,7 +1008,6 @@ save(dds, file = "forsmallintestineanalysis.RData")
 ```
 
 ### Small intestines - Run analysis
-
 ```{r}
 load("forsmallintestineanalysis.RData")
 
@@ -1038,7 +1041,6 @@ res_df_small <- res_df_small %>%
 ```
 
 ### Small intestines - GO enrichment
-
 ```{r}
 # Perform enrichGO analysis on all significant genes
 GO_small <- enrichGO(
@@ -1074,7 +1076,6 @@ heatmap_GO_small
 ```
 
 ### Small intestines - Volcano Plot
-
 ```{r}
 # Identify top genes for labeling in the volcano plot
 top_genes <- res_df_small %>% 
@@ -1112,8 +1113,9 @@ print(volcano_plot_small)
 ## Type 2 diabetes - Analysis of the distal small intestines 
 
 ### Distal small intestines - Setup for analysis
-
 ```{r}
+#| eval: false
+#| echo: true
 # Subset metadata and count matrix for small intestine samples
 design. <- design_df
 count. <- df[, rownames(design.)]
@@ -1135,7 +1137,6 @@ save(dds, file = "forsingleregionanalysis.RData")
 ```
 
 ### Distal small intestines - Run analysis
-
 ```{r}
 load("forsingleregionanalysis.RData")
 
@@ -1173,7 +1174,6 @@ res_df_ileocecal <- res_df_ileocecal %>%
 ```
 
 ### Distal small intestines - GO enrichment
-
 ```{r}
 # Perform enrichGO analysis on all significant genes
 ego_all_ileocecal <- enrichGO(
@@ -1209,7 +1209,6 @@ print(heatmap_GO_ileocecal)
 ```
 
 ### Distal small intestines - Volcano Plot
-
 ```{r}
 # Identify top genes for labeling in the volcano plot
 top_genes <- res_df_ileocecal %>% 
@@ -1253,8 +1252,9 @@ print(volcano_plot_ileocecal)
 ## Type 2 diabetes - Analysis of the large intestines 
 
 ### Large intestines - Setup for analysis
-
 ```{r}
+#| eval: false
+#| echo: true
 # Subset data for large intestine
 design. <- subset(design_df, as.numeric(Location.num) > 10)
 count. <- df[, rownames(design.)]
@@ -1275,7 +1275,6 @@ save(ddsT, file = "forlargeintestinalanalysis.RData")
 ```
 
 ### Large intestines - Run analysis
-
 ```{r}
 load("forlargeintestinalanalysis.RData")
 
@@ -1308,7 +1307,6 @@ res_df_large <- res_df_large %>%
 ```
 
 ### Large intestines - GO enrichment
-
 ```{r}
 # Perform enrichGO analysis on all significant genes
 ego_all_large <- enrichGO(
@@ -1344,7 +1342,6 @@ print(heatmap_GO_large)
 ```
 
 ### Large intestines - Volcano Plot
-
 ```{r}
 # Identify top genes for labeling in the volcano plot
 top_genes <- res_df_large %>% 
@@ -1385,8 +1382,7 @@ print(volcano_plot_large)
 ```
 
 ### RPKM plot of individual genes across 16 anatomical regions of the intestine
-
-```{r, echo=FALSE, results='hide', fig.keep='none'}
+```{r}
 
 #Plot gene expression for individual genes across all regions
 plot_gene_expression <- function(expr_df, gene_id, 
@@ -1396,7 +1392,6 @@ plot_gene_expression <- function(expr_df, gene_id,
   # Region labels for x-axis
   labeltext <- c('Duodenum', 'Treitz','3','4','5','6','7','8','9','Ileocaecal',"Caecum", "Asc. colon", "Trans. colon", "Desc. colon", "Sigmoideum", "Rectum")
 
-  
   # 1. Filter RPKM data for selected gene
   plot_df <- expr_df %>%
     filter(ENSEMBL == gene_id) 
@@ -1480,7 +1475,6 @@ for (gene_id in gene_names) {
 # Single cell analysis 
 
 ### Load everything in
-
 ```{r}
 
 umap_info_small <- read.delim('/Users/hannahgilliam-vigh/Desktop/Single cell files/50851431_UMAP_info.txt')
@@ -1496,12 +1490,6 @@ gene2acc <- gene2acc %>%
 load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/res_df_small.RData")
 load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/res_df_ileocecal.RData")
 load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/res_df_large.RData")
-
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_small_control.Rdata")
-
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.large.Rdata")
-load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_large_control.Rdata")
 
 ranked_cells_large <- c(
   # Stromal
@@ -1606,7 +1594,6 @@ gaps_col_small <- c(
 ```
 
 ### Plotting UMAPs
-
 ```{r}
 ###Plot a UMAP_small
 #Coloured by celltype annotation
@@ -1622,7 +1609,6 @@ ggplot(umap_info_large, aes(Xumap_1,Xumap_2, fill=ident))+
 ```
 
 ### Setup for analysis
-
 ```{r}
 #| eval: false
 #| echo: true
@@ -1638,6 +1624,11 @@ summary(expression_large)
 
 # Plot heatmap of cluster in the healthy small intestine 
 ## Small intestine cluster 2 - Plot heatmap
+
+```{r}
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.small.Rdata")
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_small_control.Rdata")
+```
 
 ### Setup for analysis
 ```{r}
@@ -2156,8 +2147,7 @@ heat=t(scale(t(heat)))
 # Remove rows that became NA after scaling
 heat <- heat[complete.cases(heat), ]
 
-# Reorder columns o
-f heat based on ranked cell types
+# Reorder columns of heat based on ranked cell types
 heat <- heat[, ranked_cells_small]
 
 # Clean up column names
@@ -2317,6 +2307,12 @@ print(small_intestine_cluster8_SC)
 #Plot heatmap of cluster in the healthy large intestine 
 ## Large intestine cluster 1 - Plot heatmap
 
+
+```{r}
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.cluster.large.Rdata")
+load("~/Library/Mobile Documents/com~apple~CloudDocs/pca_project/R/heat.clust.go_large_control.Rdata")
+```
+
 ### Setup for analysis
 ```{r}
 #| eval: false
@@ -2459,7 +2455,7 @@ umap_info_large$cell <- rownames(umap_info_large)
 heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
 
 #Save the heatmap data
-#save(heat, file = "heatmap_lrge_intestine_cluster2.Rdata")
+save(heat, file = "heatmap_large_intestine_cluster2.Rdata")
 ```
 
 ### Plot heatmap of cluster 2
@@ -2571,7 +2567,7 @@ umap_info_large$cell <- rownames(umap_info_large)
 heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="cell")
 
 #Save the heatmap data
-#save(heat, file = "heatmap_lrge_intestine_cluster5.Rdata")
+save(heat, file = "heatmap_large_intestine_cluster5.Rdata")
 ```
 
 ### Plot heatmap of cluster 5
@@ -2798,6 +2794,8 @@ heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="
 
 ### Plot heatmap of DEGs in small intestines
 ```{r}
+number_of_genes <- 75
+
 # Load the heatmap data
 load("heatmap_small_intestine_DEG.Rdata")
 
@@ -2934,6 +2932,8 @@ heat = merge(heat, umap_info_small[,c("ident", "cell")], by.x="variable", by.y="
 
 ### Plot heatmap of DEGs in distal small intestines
 ```{r}
+number_of_genes <- 75
+
 # Load the heatmap data
 load("heatmap_distal_small_intestine_DEG.Rdata")
 
@@ -3065,6 +3065,7 @@ heat = merge(heat, umap_info_large[,c("ident", "cell")], by.x="variable", by.y="
 
 ### Plot heatmap of DEGs in large intestines
 ```{r}
+number_of_genes <- 81 # Some are dublicates and will be removed later, the final figure will have 75 genes
 # Load the heatmap data
 load("heatmap_large_intestine_DEG.Rdata")
 
